@@ -11,7 +11,7 @@ Notes
 =====
 * Missing tests for threaded environment.
 * Missing tests for expando models and polymodel.
-* Query projection not supported yet.
+* Query projection on multiple repeated properties not supported yet.
 * Index treating not supported yet.
 * Transactions unsupported.
 * Problem with natvie ordering - sometimes it happens to upper layer (ndb) giving entities
