@@ -24,6 +24,7 @@ import sys
 import string
 import time
 import re
+import warnings
 
 from google.appengine.api import apiproxy_stub, datastore_types, datastore, users
 from google.appengine.datastore import entity_pb, datastore_pb
@@ -294,8 +295,12 @@ class _Cursor(object):
         self.__limit = 0
         self.__offset = 0
         self.__skipped_results = 0
-        self._projected_properties = set(projected_properties)
+        self._projected_props = set(projected_properties)
+        self._projected_mongo_props = set([x.replace(".", \
+                STRUCTURED_PROPERTY_DELIMITER) for x in projected_properties])
         self._app_id = app_id
+        # storage for results of projection queries on repeated properties
+        self._projection_splitted = []
 
     @property
     def cursor(self):
@@ -345,13 +350,46 @@ class _Cursor(object):
         Prepare properties in case of projection query.
         """
         return LoadEntity(entity, keys_only=False,  # TODO: keys only???
-                          property_names=self._projected_properties)
+                          property_names=self._projected_props)
 
     def __iter__(self): return self
 
+    def _split_projected(self, e):
+        projected = set(e.keys()) & self._projected_mongo_props
+        if not projected:
+            return False
+        if len(projected) == 1:
+            # split result if it is repeated property
+            rep_prop = projected.pop()
+            try:
+                e[rep_prop].__iter__
+            except AttributeError:
+                return False
+            for value in e[rep_prop]:
+                e_new = e.copy()
+                e_new[rep_prop] = [value]
+                e_proto = _Document.from_mongo(e_new, self._app_id).to_pb()
+                self._projection_splitted.insert(0, self._prepare_properties(e_proto))
+            return True
+        else:
+            warnings.warn("Projection queries on more than one multivalued "\
+                          "properties not supported yet.", FutureWarning)
+            return False
+
     def next(self):
-        entity = _Document.from_mongo(self.__cursor.next(), self._app_id).to_pb()
-        return self._prepare_properties(entity)
+        # HACK: if query has defined projection on repeated property,
+        # we fetch entity and split it into multiple entities which we
+        # return sequentially by calling this method.
+        if self._projection_splitted:
+            return self._projection_splitted.pop()
+
+        e = self.__cursor.next()
+        if self._split_projected(e):
+            return self._projection_splitted.pop()
+        else:
+            # not splitted, just return this result
+            entity = _Document.from_mongo(e, self._app_id).to_pb()
+            return self._prepare_properties(entity)
         
 
 class MongoSchemaManager(object):
@@ -585,7 +623,7 @@ class MongoDatastore(object):
         # get projection dictionary
         proj = {}
         for prop_name in query.property_name_list():
-            proj[prop_name] = 1
+            proj[prop_name.replace(".", STRUCTURED_PROPERTY_DELIMITER)] = 1
  
         # translate filter specification for mongo query
         filters = {}

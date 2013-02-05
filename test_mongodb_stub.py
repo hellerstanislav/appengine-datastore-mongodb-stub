@@ -24,7 +24,7 @@ from datastore_mongodb_stub import DatastoreMongoDBStub
 # TODO: indexes
 # TODO: querying for none, deleting property value
 # TODO: Expando models (generic properties)
-# TODO: projection query on structured properties
+# TODO: Projection queries on multivalued properties
 
 class _DatastoreStubTests(object):
     """
@@ -1029,6 +1029,7 @@ class _DatastoreStubTests(object):
         finally:
             ndb.delete_multi(keys)
 
+
     def test_query_projection(self):
         class Q(ndb.Model):
             a = ndb.StringProperty()
@@ -1039,9 +1040,32 @@ class _DatastoreStubTests(object):
         try:
             l = Q.query().get(projection=['b'], use_cache=False, use_memcache=False)
             self.assertEqual(l._to_dict(), {'b':[1]})
-            # TODO: test structured properties!
         finally:
+            del Q
             k.delete()
+        class Inner(ndb.Model):
+            i = ndb.IntegerProperty()
+            j = ndb.StringProperty(repeated=True)
+        class Q(ndb.Model):
+            s = ndb.StructuredProperty(Inner)
+            a = ndb.StringProperty()
+        q1 = Q(s=Inner(i=1, j=['a', 'b']), a='blew')
+        k1 = q1.put()
+        try:
+            # test simple get on structured property
+            l = Q.query().get(projection=['s.i'], use_cache=False, use_memcache=False)
+            self.assertEqual(l._to_dict(), {'s': {'i':1}})
+            # test fetch on unrepeated property
+            l = Q.query().fetch(projection=['s.i'], use_cache=False, use_memcache=False)
+            self.assertTrue(len(l) == 1)
+            self.assertEqual(l[0]._to_dict(), {'s': {'i':1}})
+            # test fetch on repeated property
+            l = Q.query().fetch(projection=['s.j'], use_cache=False, use_memcache=False)
+            self.assertTrue(len(l) == 2)
+            self.assertEqual(l[0]._to_dict(), {'s': {'j':['a']}})
+            self.assertEqual(l[1]._to_dict(), {'s': {'j':['b']}})
+        finally:
+            k1.delete()
 
 
 class TestDatastoreFileStubTests(unittest.TestCase, _DatastoreStubTests):
