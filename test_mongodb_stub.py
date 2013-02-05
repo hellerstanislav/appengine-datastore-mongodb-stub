@@ -26,6 +26,8 @@ from datastore_mongodb_stub import DatastoreMongoDBStub
 # TODO: Expando models (generic properties)
 # TODO: Projection queries on multivalued properties
 
+APP_ID = 'test'
+
 class _DatastoreStubTests(object):
     """
     Base class defining common test for datastore stubs.
@@ -38,8 +40,7 @@ class _DatastoreStubTests(object):
         # view non-shortened diffs
         self.maxDiff = None
 
-        self.app_id = 'test'
-        os.environ['APPLICATION_ID'] = self.app_id
+        os.environ['APPLICATION_ID'] = APP_ID
         apiproxy_stub_map.apiproxy = apiproxy_stub_map.APIProxyStubMap()
         # memcache stub
         cache_stub = memcache_stub.MemcacheServiceStub()
@@ -1068,7 +1069,7 @@ class _DatastoreStubTests(object):
             k1.delete()
 
 
-class TestDatastoreFileStubTests(unittest.TestCase, _DatastoreStubTests):
+class TestDatastoreFileStub(_DatastoreStubTests, unittest.TestCase):
     """
     In order to validate tests againts existing stub, we need to
     fire tests on DatastoreFileStub.
@@ -1077,18 +1078,17 @@ class TestDatastoreFileStubTests(unittest.TestCase, _DatastoreStubTests):
         unittest.TestCase.__init__(self, *args, **kwargs)
         _DatastoreStubTests.__init__(self)
 
-        # datastore stub
-        self.datastore_stub = DatastoreFileStub(self.app_id, None, None)
-        apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', self.datastore_stub)
-
     @classmethod
     def setUpClass(cls):
+        datastore_stub = DatastoreFileStub(APP_ID, None, None)
+        apiproxy_stub_map.apiproxy.ReplaceStub('datastore_v3', datastore_stub)
+
         underline = '~'*len(cls.__name__)
         sys.stderr.write(underline + '\n' +cls.__name__ + '\n' + underline \
                          + textwrap.dedent(cls.__doc__) + '\n')
 
 
-class TestDatastoreMongodbStubTests(unittest.TestCase, _DatastoreStubTests):
+class TestDatastoreMongodbStub(_DatastoreStubTests, unittest.TestCase):
     """
     Test mongodb stub.
     """
@@ -1096,15 +1096,15 @@ class TestDatastoreMongodbStubTests(unittest.TestCase, _DatastoreStubTests):
         unittest.TestCase.__init__(self, *args, **kwargs)
         _DatastoreStubTests.__init__(self)
 
-        # datastore stub
-        self.datastore_stub = DatastoreMongoDBStub(self.app_id)
-        apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', self.datastore_stub)
-
-    def __del__(self):
-        self.datastore_stub._datastore.clear()
+    @classmethod
+    def tearDownClass(cls):
+        cls._datastore_stub._datastore.clear()
 
     @classmethod
     def setUpClass(cls):
+        datastore_stub = DatastoreMongoDBStub(APP_ID)
+        apiproxy_stub_map.apiproxy.ReplaceStub('datastore_v3', datastore_stub)
+        cls._datastore_stub = datastore_stub
         underline = '~'*len(cls.__name__)
         sys.stderr.write(underline + '\n' +cls.__name__ + '\n' + underline \
                          + textwrap.dedent(cls.__doc__) + '\n')
