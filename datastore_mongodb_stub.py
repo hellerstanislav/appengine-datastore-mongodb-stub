@@ -27,7 +27,8 @@ import re
 
 from google.appengine.api import apiproxy_stub, datastore_types, datastore, users
 from google.appengine.datastore import entity_pb, datastore_pb
-from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, _MAX_QUERY_OFFSET
+from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, \
+     _MAX_QUERY_OFFSET, LoadEntity
 from google.appengine.ext.blobstore import BlobKey
 from google.appengine.runtime import apiproxy_errors
 
@@ -280,22 +281,34 @@ class _Document(object):
 
 
 
-
 class _Cursor(object):
-    def __init__(self, mongo_cursor):
+    """
+    Wrapper around pymongo cursor.
+
+    Returns results in format of EntityProto objects.
+    """
+    def __init__(self, mongo_cursor, projected_properties, app_id):
         self.__cursor = mongo_cursor
         # just random string should be safe without need for thread locks
         self.__id = "".join(random.sample(string.printable,25))
         self.__limit = 0
         self.__offset = 0
         self.__skipped_results = 0
+        self._projected_properties = set(projected_properties)
+        self._app_id = app_id
 
     @property
     def cursor(self):
+        """
+        Get pymongo's cursor.
+        """
         return self.__cursor
 
     @property
     def id(self):
+        """
+        Get cursor id, which is used
+        """
         return self.__id
 
     @property
@@ -327,7 +340,19 @@ class _Cursor(object):
         self.__skipped_results = min(o, _MAX_QUERY_OFFSET)
         return self
 
+    def _prepare_properties(self, entity):
+        """
+        Prepare properties in case of projection query.
+        """
+        return LoadEntity(entity, keys_only=False,  # TODO: keys only???
+                          property_names=self._projected_properties)
 
+    def __iter__(self): return self
+
+    def next(self):
+        entity = _Document.from_mongo(self.__cursor.next(), self._app_id).to_pb()
+        return self._prepare_properties(entity)
+        
 
 class MongoSchemaManager(object):
     """
@@ -533,10 +558,10 @@ class MongoDatastore(object):
 
     def get_query_results(self, count, cursor_id):
         """
-        Get $count results from cursor.
+        Get *count* results from cursor identified by *cursor_id*.
         """
         try:
-            cursor = self._cursors[cursor_id].cursor
+            cursor = self._cursors[cursor_id]
         except KeyError:
             raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
                                                   'Cursor %d not found' % cursor_id)
@@ -545,7 +570,7 @@ class MongoDatastore(object):
         entities = []
         for _ in xrange(count):
             try:
-                entity = _Document.from_mongo(cursor.next(), self._app_id).to_pb()
+                entity = cursor.next()
                 entities.append(entity)
             except StopIteration: break
         return entities, False
@@ -553,9 +578,14 @@ class MongoDatastore(object):
 
     def query(self, query):
         """
-        Returns cursor for given query.
+        Returns cursor ID for given query.
         """
         coll_name = query.kind().lower()
+
+        # get projection dictionary
+        proj = {}
+        for prop_name in query.property_name_list():
+            proj[prop_name] = 1
  
         # translate filter specification for mongo query
         filters = {}
@@ -606,10 +636,13 @@ class MongoDatastore(object):
             filters[type_for_key] = {"$nin" : ["blob", "text", "local"]}
 
         # get cursor
-        mcursor = self._db[coll_name].find(filters)
+        if proj: 
+            mcursor = self._db[coll_name].find(filters, proj)
+        else:
+            mcursor = self._db[coll_name].find(filters)
         if ordering:
             mcursor = mcursor.sort(ordering)
-        cursor =  _Cursor(mcursor)
+        cursor = _Cursor(mcursor, query.property_name_list(), self._app_id)
         if query.has_offset():
             cursor.offset(query.offset())
         if query.has_limit():

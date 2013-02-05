@@ -19,6 +19,12 @@ from google.appengine.ext.blobstore import BlobKey
 # import DATASTORE MONGODB STUB from this pkg
 from datastore_mongodb_stub import DatastoreMongoDBStub
 
+# TODO: filtering generic property
+# TODO: thread tests
+# TODO: indexes
+# TODO: querying for none, deleting property value
+# TODO: Expando models (generic properties)
+# TODO: projection query on structured properties
 
 class _DatastoreStubTests(object):
     """
@@ -1023,14 +1029,19 @@ class _DatastoreStubTests(object):
         finally:
             ndb.delete_multi(keys)
 
+    def test_query_projection(self):
+        class Q(ndb.Model):
+            a = ndb.StringProperty()
+            b = ndb.IntegerProperty(repeated=True)
 
-    # TODO: filtering generic property
-    # TODO: thread tests
-    # TODO: indexes
-    # TODO: query: projection
-    # TODO: Expando models (generic properties)
-    # PROBLEM C.1: nativni razeni - v datastore podle casu vlozeni, v mongodb nyni podle casu vytvoreni
-    # objektu. Reseni problemu: nativni mongodb _id nebo vkladani postupne.
+        q1 = Q(a='bar1', b=[1])
+        k = q1.put()
+        try:
+            l = Q.query().get(projection=['b'], use_cache=False, use_memcache=False)
+            self.assertEqual(l._to_dict(), {'b':[1]})
+            # TODO: test structured properties!
+        finally:
+            k.delete()
 
 
 class TestDatastoreFileStubTests(unittest.TestCase, _DatastoreStubTests):
