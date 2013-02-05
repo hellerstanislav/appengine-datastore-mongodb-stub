@@ -26,6 +26,7 @@ class MyTests(unittest.TestCase)
         """
         Set up SDK testing environment
         """
+        super(MyTests, self).__init__(*args, **kwargs)
         self.app_id = 'test'
         os.environ['APPLICATION_ID'] = self.app_id
         apiproxy_stub_map.apiproxy = apiproxy_stub_map.APIProxyStubMap()
