@@ -1082,16 +1082,41 @@ class _DatastoreStubTests(object):
 
     def test_query_projection_multiple_repeated_properties(self):
         """Test wicked behaviour of datastore when using projection
-           on more than on repeated property.
+           on more than one repeated property.
         """
-        #class Q(ndb.Md
-        #    # test fetch: more repeated properties
-        #    l = Q.query().fetch(projection=['s.j', 's.l'], use_cache=False, use_memcache=False)
-        #    self.assertTrue(len(l) == 2)
-        #    self.assertEqual(l[0]._to_dict(), {'s': {'j':['a']}})
-        #    self.assertEqual(l[1]._to_dict(), {'s': {'j':['b'], 'l':8}})
-        #finally:
-        #    k1.delete()
+        class Q(ndb.Model):
+            x = ndb.StringProperty(repeated=True)
+            y = ndb.IntegerProperty(repeated=True)
+            z = ndb.BooleanProperty()
+        q = Q(x=['a', 'b', 'a'], y=[1,2,2], z=False)
+        k = q.put()
+        try:
+            l = Q.query().order(Q.x,Q.y).fetch(projection=['x', 'y'])
+            self.assertTrue(len(l) == 4)
+            self.assertEqual(l[0]._to_dict(), {'x':['a'], 'y':[1]})
+            self.assertEqual(l[1]._to_dict(), {'x':['a'], 'y':[2]})
+            self.assertEqual(l[2]._to_dict(), {'x':['b'], 'y':[1]})
+            self.assertEqual(l[3]._to_dict(), {'x':['b'], 'y':[2]})
+        finally:
+            k.delete()
+
+
+    def test_query_projection_with_filter(self):
+        class Q(ndb.Model):
+            x = ndb.StringProperty(repeated=True)
+            y = ndb.IntegerProperty(repeated=True)
+            z = ndb.BooleanProperty()
+        q = Q(x=['a', 'b', 'a'], y=[1,2,3,4], z=False)
+        k = q.put()
+        try:
+            l = Q.query(Q.y < 3).order(Q.y, Q.x).fetch(projection=['x', 'y'])
+            self.assertTrue(len(l) == 4)
+            self.assertEqual(l[0]._to_dict(), {'x':['a'], 'y':[1]})
+            self.assertEqual(l[1]._to_dict(), {'x':['b'], 'y':[1]})
+            self.assertEqual(l[2]._to_dict(), {'x':['a'], 'y':[2]})
+            self.assertEqual(l[3]._to_dict(), {'x':['b'], 'y':[2]})
+        finally:
+            k.delete()
 
 
     def test_query_projection_unindexed(self):
