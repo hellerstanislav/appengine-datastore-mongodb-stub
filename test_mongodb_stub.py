@@ -1032,6 +1032,9 @@ class _DatastoreStubTests(object):
 
 
     def test_query_projection(self):
+        """Test simple projection cases using unerepeated properties
+           and one repeated property. These cases are pretty usual.
+        """
         class Q(ndb.Model):
             a = ndb.StringProperty()
             b = ndb.IntegerProperty(repeated=True)
@@ -1047,10 +1050,11 @@ class _DatastoreStubTests(object):
         class Inner(ndb.Model):
             i = ndb.IntegerProperty()
             j = ndb.StringProperty(repeated=True)
+            l = ndb.IntegerProperty(repeated=True)
         class Q(ndb.Model):
             s = ndb.StructuredProperty(Inner)
             a = ndb.StringProperty()
-        q1 = Q(s=Inner(i=1, j=['a', 'b']), a='blew')
+        q1 = Q(s=Inner(i=1, j=['a', 'b', 'foo'], l=[7,8]), a='blew')
         k1 = q1.put()
         try:
             # test simple get on structured property
@@ -1060,13 +1064,46 @@ class _DatastoreStubTests(object):
             l = Q.query().fetch(projection=['s.i'], use_cache=False, use_memcache=False)
             self.assertTrue(len(l) == 1)
             self.assertEqual(l[0]._to_dict(), {'s': {'i':1}})
-            # test fetch on repeated property
+            # test fetch: one repeated property in structured property
             l = Q.query().fetch(projection=['s.j'], use_cache=False, use_memcache=False)
-            self.assertTrue(len(l) == 2)
+            self.assertTrue(len(l) == 3)
             self.assertEqual(l[0]._to_dict(), {'s': {'j':['a']}})
             self.assertEqual(l[1]._to_dict(), {'s': {'j':['b']}})
+            self.assertEqual(l[2]._to_dict(), {'s': {'j':['foo']}})
+            # test fetch: more projected properties, one repeated
+            l = Q.query().fetch(projection=['s.j', 'a'], use_cache=False, use_memcache=False)
+            self.assertTrue(len(l) == 3)
+            self.assertEqual(l[0]._to_dict(), {'s': {'j':['a']}, 'a':'blew'})
+            self.assertEqual(l[1]._to_dict(), {'s': {'j':['b']}, 'a':'blew'})
+            self.assertEqual(l[2]._to_dict(), {'s': {'j':['foo']}, 'a': 'blew'})
         finally:
             k1.delete()
+
+
+    def test_query_projection_multiple_repeated_properties(self):
+        """Test wicked behaviour of datastore when using projection
+           on more than on repeated property.
+        """
+        #class Q(ndb.Md
+        #    # test fetch: more repeated properties
+        #    l = Q.query().fetch(projection=['s.j', 's.l'], use_cache=False, use_memcache=False)
+        #    self.assertTrue(len(l) == 2)
+        #    self.assertEqual(l[0]._to_dict(), {'s': {'j':['a']}})
+        #    self.assertEqual(l[1]._to_dict(), {'s': {'j':['b'], 'l':8}})
+        #finally:
+        #    k1.delete()
+
+
+    def test_query_projection_unindexed(self):
+        """Projection query should fail on unindexable properties like text or blob."""
+        class Q(ndb.Model):
+            a = ndb.StringProperty()
+            b = ndb.TextProperty()
+        q = Q(a='a', b='looong text')
+        k = q.put()
+        with self.assertRaises(ndb.BadProjectionError):
+            l = Q.query().fetch(projection=['b'])
+        k.delete()
 
 
 class TestDatastoreFileStub(_DatastoreStubTests, unittest.TestCase):

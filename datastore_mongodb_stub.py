@@ -358,23 +358,22 @@ class _Cursor(object):
         projected = set(e.keys()) & self._projected_mongo_props
         if not projected:
             return False
-        if len(projected) == 1:
-            # split result if it is repeated property
-            rep_prop = projected.pop()
-            try:
-                e[rep_prop].__iter__
-            except AttributeError:
-                return False
-            for value in e[rep_prop]:
-                e_new = e.copy()
-                e_new[rep_prop] = [value]
-                e_proto = _Document.from_mongo(e_new, self._app_id).to_pb()
-                self._projection_splitted.insert(0, self._prepare_properties(e_proto))
-            return True
-        else:
+        repeated = filter(lambda t: isinstance(t[1], list), # XXX list only?
+                          [(attr, e[attr]) for attr in projected])
+        if not repeated:
+            return False
+        if len(repeated) > 1:
             warnings.warn("Projection queries on more than one multivalued "\
                           "properties not supported yet.", FutureWarning)
             return False
+        # split result on repeated property
+        prop, values = repeated[0]
+        for value in values:
+            e_new = e.copy()
+            e_new[prop] = [value]
+            e_proto = _Document.from_mongo(e_new, self._app_id).to_pb()
+            self._projection_splitted.insert(0, self._prepare_properties(e_proto))
+        return True
 
     def next(self):
         # HACK: if query has defined projection on repeated property,
