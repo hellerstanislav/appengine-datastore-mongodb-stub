@@ -41,6 +41,7 @@ class MyTests(unittest.TestCase)
                                                    mongodb_host='localhost',
                                                    mongodb_port=27017)
         # we can now edit pymongo.MongoClient's write_concern to use journaling
+        # this option is only for pymongo version >= 2.4
         self.datastore_stub._datastore.write_concern['j'] = True
         apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', self.datastore_stub)
 ```
@@ -49,11 +50,14 @@ Maybe someday here will be patch for testbed if needed.
 
 Notes
 =====
+* Tested only on ndb (google.appengine.ext.ndb).
 * Missing tests for threaded environment.
 * Missing tests for expando models and polymodel.
 * Query projection on multiple repeated properties not supported yet.
 * Index treating not supported yet.
 * Transactions unsupported.
-* Problem with natvie ordering - sometimes it happens to upper layer (ndb) giving entities
+* Problem with native ordering - sometimes it happens to upper layer (ndb) giving entities
   to put into datastore in wrong order. Then some tests fail because default ordering should
   be by insert time, which is wrong in this case.
+* Consistency policy is very hard to simulate. Not supported yet. :(
+
