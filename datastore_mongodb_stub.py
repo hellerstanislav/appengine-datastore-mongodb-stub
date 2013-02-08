@@ -389,7 +389,24 @@ class _Cursor(object):
             # not splitted, just return this result
             entity = _Document.from_mongo(e, self._app_id).to_pb()
             return self._prepare_properties(entity)
-        
+
+
+    def fetch_results(self, count):        
+        #try:
+        #    cursor = self._cursors[cursor_id]
+        #except KeyError:
+        #    raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
+        #                                          'Cursor %d not found' % cursor_id)
+        if count == 0:
+            count = 1
+        entities = []
+        for _ in xrange(count):
+            try:
+                entity = self.next()
+                entities.append(entity)
+            except StopIteration: break
+        return entities
+
 
 class MongoSchemaManager(object):
     """
@@ -593,24 +610,12 @@ class MongoDatastore(object):
         self._conn.drop_database(self._app_id)
 
 
-    def get_query_results(self, count, cursor_id):
-        """
-        Get *count* results from cursor identified by *cursor_id*.
-        """
+    def get_cursor(self, cursor_id):
         try:
-            cursor = self._cursors[cursor_id]
+            return self._cursors[cursor_id]
         except KeyError:
             raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
                                                   'Cursor %d not found' % cursor_id)
-        if count == 0:
-            count = 1
-        entities = []
-        for _ in xrange(count):
-            try:
-                entity = cursor.next()
-                entities.append(entity)
-            except StopIteration: break
-        return entities, False
 
 
     def query(self, query):
@@ -805,9 +810,10 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
         """
         cursor_id = next_request.cursor().cursor()
         count = next_request.count()
-        entities, more_results = self._datastore.get_query_results(count, cursor_id)
+        cursor = self._datastore.get_cursor(cursor_id)
+        entities = cursor.fetch_results(count)
         query_result.result_list().extend(entities)
-        query_result.set_more_results(more_results)
+        query_result.set_more_results(False)
 
 
     def Clear(self):
