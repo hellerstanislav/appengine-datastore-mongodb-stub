@@ -288,13 +288,19 @@ class _Cursor(object):
 
     Returns results in format of EntityProto objects.
     """
-    def __init__(self, mongo_cursor, projected_properties, app_id):
+    _MONGO_FILTER_MAP = {"$lt": lambda x,y: x<y,
+                         "$lte": lambda x,y: x<=y,
+                         "$gte": lambda x,y: x>=y,
+                         "$gt": lambda x,y: x>y}
+
+    def __init__(self, mongo_cursor, filters, projected_properties, app_id):
         self.__cursor = mongo_cursor
         # just random string should be safe without need for thread locks
         self.__id = "".join(random.sample(string.printable,25))
         self.__limit = 0
         self.__offset = 0
         self.__skipped_results = 0
+        self._filters = filters
         self._projected_props = set(projected_properties)
         self._projected_mongo_props = set([x.replace(".", \
                 STRUCTURED_PROPERTY_DELIMITER) for x in projected_properties])
@@ -326,16 +332,11 @@ class _Cursor(object):
         # HACK: ndb is probably requesting count()
         if o >= 2147483647:
             o = 0
-        #if o > _MAX_QUERY_OFFSET:
-        #    o = _MAX_QUERY_OFFSET
-        #    self.__offset = o
         self.__cursor.skip(o)
         return self
 
     def limit(self, l):
         assert l >= 0
-        #if l > _MAXIMUM_RESULTS or l == 0:
-        #    l = _MAXIMUM_RESULTS
         self.__limit = l
         self.__cursor.limit(l)
         return self
@@ -354,7 +355,44 @@ class _Cursor(object):
 
     def __iter__(self): return self
 
+    def _get_filter_fnc(self, filter_spec):
+        if isinstance(filter_spec, dict):
+            # inequality operator
+            op, spec = filter_spec.items()[0]
+            try:
+                f = self._MONGO_FILTER_MAP[op]
+                return lambda x: f(x, spec)
+            except KeyError:
+                return None
+        else:
+            # equals
+            return lambda x: x == spec
+
+    def _filter_projected_values(self, prop, values):
+        # is there some filter defined on this property?
+        filter_fnc = []
+        if prop in self._filters:
+            filter_fnc.append(self._get_filter_fnc(self._filters[prop]))
+        if "$and" in self._filters and not filter_fnc:
+            for f in self._filters["$and"]:
+                filtered_prop, fdict = f.items()[0]
+                if filtered_prop != prop: continue
+                filter_fnc.append(self._get_filter_fnc(fdict))
+        # get rid of None's
+        filter_fnc = filter(None, filter_fnc)
+        if not filter_fnc:
+            return set(values)
+        # do filtering
+        result = []
+        for v in set(values):
+            if all([fnc(v) for fnc in filter_fnc]):
+                result.append(v)
+        return result
+
     def _split_projected(self, e):
+        """
+        Split values of repeated property if it is projected.
+        """
         projected = set(e.keys()) & self._projected_mongo_props
         if not projected:
             return False
@@ -368,7 +406,7 @@ class _Cursor(object):
             return False
         # split result on repeated property
         prop, values = repeated[0]
-        for value in values:
+        for value in self._filter_projected_values(prop, values):
             e_new = e.copy()
             e_new[prop] = [value]
             e_proto = _Document.from_mongo(e_new, self._app_id).to_pb()
@@ -392,11 +430,6 @@ class _Cursor(object):
 
 
     def fetch_results(self, count):        
-        #try:
-        #    cursor = self._cursors[cursor_id]
-        #except KeyError:
-        #    raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
-        #                                          'Cursor %d not found' % cursor_id)
         if count == 0:
             count = 1
         entities = []
@@ -684,7 +717,7 @@ class MongoDatastore(object):
             mcursor = self._db[coll_name].find(filters)
         if ordering:
             mcursor = mcursor.sort(ordering)
-        cursor = _Cursor(mcursor, query.property_name_list(), self._app_id)
+        cursor = _Cursor(mcursor, filters, query.property_name_list(), self._app_id)
         if query.has_offset():
             cursor.offset(query.offset())
         if query.has_limit():
