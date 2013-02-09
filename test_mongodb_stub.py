@@ -22,7 +22,7 @@ from datastore_mongodb_stub import DatastoreMongoDBStub
 # TODO: filtering generic property
 # TODO: thread tests
 # TODO: indexes
-# TODO: querying for none, deleting property value
+# TODO: querying for None
 # TODO: Expando models (generic properties)
 # TODO: Projection queries on multivalued properties
 
@@ -376,12 +376,28 @@ class _DatastoreStubTests(object):
 
     # DELETE
 
-    def test_delete(self):
+    def test_delete_entity(self):
         class Product(ndb.Model):
             a = ndb.StringProperty()
         k = Product(a="a").put()
         k.delete()
-        assert k.get() is None
+        self.assertEqual(k.get(), None)
+
+    def test_delete_property_value(self):
+        class P(ndb.Model):
+            a = ndb.StringProperty(repeated=True)
+            b = ndb.IntegerProperty()
+        p = P(a=['x','y'], b=4)
+        k = p.put()
+        del p.b
+        p.put()
+        pp = k.get(use_cache=False, use_memcache=False)
+        self.assertEqual(pp.b, None)
+        pp.a.pop()
+        pp.put()
+        ppp = k.get(use_cache=False, use_memcache=False)
+        self.assertEqual(ppp.a, ['x'])
+        k.delete()
 
 
     # SCHEMA
