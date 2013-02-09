@@ -22,7 +22,6 @@ from datastore_mongodb_stub import DatastoreMongoDBStub
 # TODO: filtering generic property
 # TODO: thread tests
 # TODO: indexes
-# TODO: querying for None
 # TODO: Expando models (generic properties)
 # TODO: Projection queries on multivalued properties
 
@@ -591,6 +590,26 @@ class _DatastoreStubTests(object):
         finally:
             ndb.delete_multi(keys)
 
+
+    def test_query_filter_none(self):
+        class Q(ndb.Model):
+            a = ndb.StringProperty()
+            b = ndb.IntegerProperty()
+            c = ndb.GenericProperty()
+        q = Q(a=None, b=None, c=None)
+        k = q.put()
+        try:
+            def check(r):
+                self.assertNotEqual(r, None)
+                self.assertEqual(r.key, k)
+                self.assertTrue(r.a is None and r.b is None and r.c is None)
+            r1 = Q.query(Q.a == None).get()
+            check(r1)
+            r2 = Q.query(Q.a == None, Q.c==None).get()
+            check(r2)
+            self.assertEqual(Q.query(Q.b != None).get(), None)
+        finally:
+            k.delete()
 
     # QUERY OPTIONS
 
