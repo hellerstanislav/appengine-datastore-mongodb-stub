@@ -1185,6 +1185,20 @@ class _DatastoreStubTests(object):
         k.delete()
 
 
+    # EXPANDO, POLYMODEL
+
+    def test_expando_model(self):
+        class E(ndb.Expando):
+            x = ndb.StringProperty()
+        e = E(x='foo', b='hello', c={'a':99})
+        k = e.put()
+        try:
+            self.assertEqual(e, k.get(use_cache=False, use_memcache=False))
+        finally:
+            k.delete()
+       
+
+
 class TestDatastoreFileStub(_DatastoreStubTests, unittest.TestCase):
     """
     In order to validate tests againts existing stub, we need to
