@@ -1174,7 +1174,8 @@ class _DatastoreStubTests(object):
 
 
     def test_query_projection_unindexed(self):
-        """Projection query should fail on unindexable properties like text or blob."""
+        """Projection query should fail on unindexable properties.
+           Test text, blob, local structured property."""
         class Q(ndb.Model):
             a = ndb.StringProperty()
             b = ndb.TextProperty()
@@ -1182,6 +1183,28 @@ class _DatastoreStubTests(object):
         k = q.put()
         with self.assertRaises(ndb.BadProjectionError):
             l = Q.query().fetch(projection=['b'])
+        k.delete()
+
+        # local structured property
+        class Inner(ndb.Model):
+            i = ndb.StringProperty()
+        class Q(ndb.Model):
+            a = ndb.LocalStructuredProperty(Inner)
+        q = Q(a=Inner(i='foo'))
+        k = q.put()
+        with self.assertRaises(ndb.BadProjectionError):
+            l = Q.query().fetch(projection=['a'])
+        k.delete()
+
+        # structured property, inner uninexed
+        class Inner(ndb.Model):
+            i = ndb.BlobProperty()
+        class Q(ndb.Model):
+            a = ndb.StructuredProperty(Inner)
+        q = Q(a=Inner(i='abc'))
+        k = q.put()
+        with self.assertRaises(ndb.BadProjectionError):
+            l = Q.query().fetch(projection=['a.i'])
         k.delete()
 
 
