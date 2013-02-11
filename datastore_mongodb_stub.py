@@ -284,9 +284,9 @@ class _Document(object):
 
 
 
-class _Cursor(object):
+class _IteratorCursor(object):
     """
-    Wrapper around pymongo cursor.
+    Wrapper around pymongo.Cursor.
 
     Returns results in format of EntityProto objects.
     """
@@ -295,33 +295,117 @@ class _Cursor(object):
                          "$gte": lambda x,y: x>=y,
                          "$gt": lambda x,y: x>y}
 
-    def __init__(self, mongo_cursor, filters, projected_properties, app_id):
-        self.__cursor = mongo_cursor
+    _DATASTORE_FILTER_MAP = {
+        datastore_pb.Query_Filter.LESS_THAN: '$lt',
+        datastore_pb.Query_Filter.LESS_THAN_OR_EQUAL: '$lte',
+        datastore_pb.Query_Filter.GREATER_THAN: '$gt',
+        datastore_pb.Query_Filter.GREATER_THAN_OR_EQUAL: '$gte',
+    }
+
+    def __init__(self, query, app_id, db):
+        self._app_id = app_id
         # just random string should be safe without need for thread locks
         self.__id = "".join(random.sample(string.printable,25))
         self.__limit = 0
         self.__offset = 0
         self.__skipped_results = 0
-        self._filters = filters
-        self._projected_props = set(projected_properties)
+        self._projected_props = set(query.property_name_list())
         self._projected_mongo_props = set([x.replace(".", \
-                STRUCTURED_PROPERTY_DELIMITER) for x in projected_properties])
-        self._app_id = app_id
+                STRUCTURED_PROPERTY_DELIMITER) for x in query.property_name_list()])
         # storage for results of projection queries on repeated properties
         self._projection_splitted = []
 
+        # parse query
+        proj = self._projection(query)
+        self._filters = self._get_filters(query)
+        self._ancestor_query(query)
+        order = self._ordering(query)
+        coll_name = query.kind().lower()
+
+        # get cursor
+        if proj:
+            self.__cursor = db[coll_name].find(self._filters, proj)
+        else:
+            self.__cursor = db[coll_name].find(self._filters)
+        if order:
+            self.__cursor.sort(order)
+        if query.has_offset():
+            self.offset(query.offset())
+        if query.has_limit():
+            self.limit(query.limit())
+
+
+    def _projection(self, query):
+        """Get projection mongodb-like dictionary"""
+        proj = {}
+        for prop_name in query.property_name_list():
+            proj[prop_name.replace(".", STRUCTURED_PROPERTY_DELIMITER)] = 1
+        return proj
+
+    def _get_filters(self, query):
+        """Translate filter specification for mongo query"""
+        filters = {}
+        for f in query.filter_list():
+            prop = f.property(0).name().decode('utf-8')
+            val = datastore_types.FromPropertyPb(f.property_list()[0])
+            if prop == "__key__":
+                prop = "_id"
+            # transform filter value of nonequality filter
+            if f.op() != datastore_pb.Query_Filter.EQUAL:
+                val = {self._DATASTORE_FILTER_MAP[f.op()] : val}
+            # if there are more filters on the same property -> AND
+            if prop in filters:
+                v1 = filters[prop]
+                del filters[prop]
+                filters["$and"] = [{prop:v1}, {prop:val}]
+            else:
+                filters[prop] = val
+        return filters
+
+    def _ancestor_query(self, query):
+        if query.has_ancestor():
+            k = _Key(query.ancestor(), self._app_id).to_mongo_key()
+            self._filters["_id"] = re.compile("%s" % k)
+
+    def _ordering(self, query):
+        ordering = []
+        for order in query.order_list():
+            key = order.property().decode('utf-8')
+            direction = ASCENDING
+            if order.direction() is datastore_pb.Query_Order.DESCENDING:
+                direction = DESCENDING
+
+            # translate key attribute
+            if key == "__key__":
+                key = "_id"
+            # translate structured property attributes
+            key = key.replace(".", STRUCTURED_PROPERTY_DELIMITER)
+
+            ordering.append((key, direction))
+
+            # add $exists filter to get the same behaviour as google datastore:
+            # if the attribute does not exist in the entity, datastore omits it,
+            # but mognodb returns it..
+            if key in self._filters:
+                self._filters[key]["$exists"] = True
+            else:
+                self._filters[key] = {"$exists" : True}
+
+            # ensure that there are not returned results with unorderable
+            # property types
+            type_for_key = "%s.t" % key
+            # FIXME: add more unorderable property types!
+            self._filters[type_for_key] = {"$nin" : ["blob", "text", "local"]}
+        return ordering
+
     @property
     def cursor(self):
-        """
-        Get pymongo's cursor.
-        """
+        """Get pymongo's cursor."""
         return self.__cursor
 
     @property
     def id(self):
-        """
-        Get cursor id, which is used
-        """
+        """Get cursor id, which is used"""
         return self.__id
 
     @property
@@ -349,9 +433,7 @@ class _Cursor(object):
         return self
 
     def _prepare_properties(self, entity):
-        """
-        Prepare properties in case of projection query.
-        """
+        """Prepare properties in case of projection query."""
         return LoadEntity(entity, keys_only=False,  # TODO: keys only???
                           property_names=self._projected_props)
 
@@ -443,6 +525,7 @@ class _Cursor(object):
         return entities
 
 
+
 class MongoSchemaManager(object):
     """
     Schema manager for datastore MongoDB stub.
@@ -514,12 +597,6 @@ class MongoDatastore(object):
     Base MongoDB Datastore responsible for storing and retrieving data from
     MongoDB database.
     """
-    FILTER_MAP = {
-        datastore_pb.Query_Filter.LESS_THAN: '$lt',
-        datastore_pb.Query_Filter.LESS_THAN_OR_EQUAL: '$lte',
-        datastore_pb.Query_Filter.GREATER_THAN: '$gt',
-        datastore_pb.Query_Filter.GREATER_THAN_OR_EQUAL: '$gte',
-    }
 
     def __init__(self, host, port, app_id, require_indexes):
         self._app_id = app_id
@@ -544,19 +621,6 @@ class MongoDatastore(object):
         self._cursors = {}
 
     schema = property(lambda self: self._schema)
-
-
-    def _filter_op(self, attr, qf, val):
-        """
-        @param attr: attribute name
-        @param qf: datastore_pb.Query_Filter
-        @param val: filtered value
-        """
-        if attr == "__key__":
-            attr = "_id"
-        if qf == datastore_pb.Query_Filter.EQUAL:
-            return (attr, val)
-        return (attr, {self.FILTER_MAP[qf] : val})
 
 
     @property
@@ -658,77 +722,11 @@ class MongoDatastore(object):
         Returns cursor ID for given query.
         """
         coll_name = query.kind().lower()
-
-        # get projection dictionary
-        proj = {}
-        for prop_name in query.property_name_list():
-            proj[prop_name.replace(".", STRUCTURED_PROPERTY_DELIMITER)] = 1
- 
-        # translate filter specification for mongo query
-        filters = {}
-        for f in query.filter_list():
-            prop = f.property(0).name().decode('utf-8')
-            val = datastore_types.FromPropertyPb(f.property_list()[0])
-            attr, val = self._filter_op(prop, f.op(), val)
-            if attr in filters:
-                # there are more filters on the same property -> AND
-                v1 = filters[attr]
-                del filters[attr]
-                filters["$and"] = [{attr:v1}, {attr:val}]
-            else:
-                filters[attr] = val
-
-        # ancestor query
-        if query.has_ancestor():
-            k = _Key(query.ancestor(), self._app_id).to_mongo_key()
-            filters["_id"] = re.compile("%s" % k)
-
-        ordering = []
-        for order in query.order_list():
-            key = order.property().decode('utf-8')
-            direction = ASCENDING
-            if order.direction() is datastore_pb.Query_Order.DESCENDING:
-                direction = DESCENDING
-
-            # translate key attribute
-            if key == "__key__":
-                key = "_id"
-            # translate structured property attributes
-            key = key.replace(".", STRUCTURED_PROPERTY_DELIMITER)
-
-            ordering.append((key, direction))
-
-            # add $exists filter to get the same behaviour as google datastore:
-            # if the attribute does not exist in the entity, datastore omits it,
-            # but mognodb returns it..
-            if key in filters:
-                filters[key]["$exists"] = True
-            else:
-                filters[key] = {"$exists" : True}
-
-            # ensure that there are not returned results with unorderable
-            # property types
-            type_for_key = "%s.t" % key
-            # FIXME: add more unorderable property types!
-            filters[type_for_key] = {"$nin" : ["blob", "text", "local"]}
-
-        # get cursor
-        if proj: 
-            mcursor = self._db[coll_name].find(filters, proj)
-        else:
-            mcursor = self._db[coll_name].find(filters)
-        if ordering:
-            mcursor = mcursor.sort(ordering)
-        cursor = _Cursor(mcursor, filters, query.property_name_list(), self._app_id)
-        if query.has_offset():
-            cursor.offset(query.offset())
-        if query.has_limit():
-            cursor.limit(query.limit())
+        cursor = _IteratorCursor(query, self._app_id, self._db)
 
         # store cursor for further get_query_results() calls
         self._cursors[cursor.id] = cursor.compile()
         return cursor
-
 
 
     def _check_indexes(self, query):
