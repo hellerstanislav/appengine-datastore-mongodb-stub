@@ -19,11 +19,10 @@ from google.appengine.ext.blobstore import BlobKey
 # import DATASTORE MONGODB STUB from this pkg
 from datastore_mongodb_stub import DatastoreMongoDBStub
 
-# TODO: filtering generic property
 # TODO: thread tests
 # TODO: indexes
-# TODO: Expando models (generic properties)
 # TODO: Projection queries on multivalued properties
+# TODO: Datastore statistics
 
 APP_ID = 'test'
 

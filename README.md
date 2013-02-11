@@ -21,29 +21,30 @@ from google.appengine.api.memcache import memcache_stub
 
 from datastore_mongodb_stub import DatastoreMongoDBStub
 
+APP_ID = 'test'
+
 class MyTests(unittest.TestCase)
-    def __init__(self, *args, **kwargs):
+    @classmethod
+    def setUpClass(cls):
         """
         Set up SDK testing environment
         """
-        super(MyTests, self).__init__(*args, **kwargs)
-        self.app_id = 'test'
-        os.environ['APPLICATION_ID'] = self.app_id
+        os.environ['APPLICATION_ID'] = APP_ID
         apiproxy_stub_map.apiproxy = apiproxy_stub_map.APIProxyStubMap()
         # memcache stub
         cache_stub = memcache_stub.MemcacheServiceStub()
         apiproxy_stub_map.apiproxy.RegisterStub('memcache', cache_stub)
         # datastore stub
-        self.datastore_stub = DatastoreMongoDBStub(self.app_id,
-                                                   require_indexes=False,
-                                                   service_name='datastore_v3',
-                                                   consistency_policy=None,
-                                                   mongodb_host='localhost',
-                                                   mongodb_port=27017)
+        datastore_stub = DatastoreMongoDBStub(APP_ID,
+                                              require_indexes=False,
+                                              service_name='datastore_v3',
+                                              consistency_policy=None,
+                                              mongodb_host='localhost',
+                                              mongodb_port=27017)
         # we can now edit pymongo.MongoClient's write_concern to use journaling
         # this option is only for pymongo version >= 2.4
-        self.datastore_stub._datastore.write_concern['j'] = True
-        apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', self.datastore_stub)
+        datastore_stub._datastore.write_concern['j'] = True
+        apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
 ```
 
 Maybe someday here will be patch for testbed if needed.
@@ -52,12 +53,12 @@ Notes
 =====
 * Tested only on ndb (google.appengine.ext.ndb).
 * Missing tests for threaded environment.
-* Missing tests for expando models and polymodel.
 * Query projection on multiple repeated properties not supported yet.
 * Index treating not supported yet.
 * Transactions unsupported.
 * Problem with native ordering - sometimes it happens to upper layer (ndb) giving entities
   to put into datastore in wrong order. Then some tests fail because default ordering should
   be by insert time, which is wrong in this case.
-* Consistency policy is very hard to simulate. Not supported yet. :(
+* Consistency policy not supported yet.
+* Datastore statistics not supported yet.
 
