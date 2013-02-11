@@ -86,7 +86,7 @@ class _Key(object):
            path = key.path().element_list()
            # if new key (entity is not stored into datastore), generate
            # new random monotonically increasing id.
-           if path[-1].id() == 0:
+           if path[-1].id() == 0 and not path[-1].has_name():
                 path[-1].set_id(self._gen_id())
                 self._new = True
            self.path_chain = [x for x in itertools.chain(*[(a.type(), a.id()) for a in path])]
@@ -246,9 +246,11 @@ class _Document(object):
     @classmethod
     def from_pb(cls, entity, app_id):
         d = cls(app_id)
-        d.key = _Key(entity.key(), app_id)
-        d._parse_pb(entity)
-        d._entity = entity
+        clone = entity_pb.EntityProto()
+        clone.CopyFrom(entity)
+        d.key = _Key(clone.key(), app_id)
+        d._parse_pb(clone)
+        d._entity = clone
         return d
 
     @classmethod
@@ -878,4 +880,5 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
         explanation = []
         assert response.IsInitialized(explanation), explanation
 
+    # TODO: def SetConsistencyPolicy
 
