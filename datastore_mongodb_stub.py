@@ -119,6 +119,9 @@ class _Key(object):
     def collection(self):
         return self.path_chain[-2].lower()
 
+    def kind(self):
+        return self.path_chain[-2]
+
     def __str__(self):
         return "_Key(%s)" % self.to_mongo_key()
 
@@ -269,7 +272,7 @@ class _Document(object):
         @returns: dictionary representing schema of this entity.
         @rtype: dict of pairs attr:type
         """
-        schema = {"_id": self.get_collection()}
+        schema = {"_id": self.get_collection(), "_kind": self.key.kind()}
         d = datastore.Entity._FromPb(self._entity)
         for k, v in d.iteritems():
             k = k.replace(".", STRUCTURED_PROPERTY_DELIMITER)
@@ -284,9 +287,37 @@ class _Document(object):
 
 
 
-class _IteratorCursor(object):
+class _BaseCursor(object):
     """
-    Wrapper around pymongo.Cursor.
+    Base class for all cursor wrappers.
+    """
+    def __init__(self, query):
+        self._app_id = query.app()
+        self._skipped_results = 0
+        # just random string should be safe without need for thread locks
+        self.__id = "".join(random.sample(string.printable,25))
+
+    @property
+    def cursor(self):
+        """Get pymongo's cursor."""
+        return self.__cursor
+
+    @property
+    def id(self):
+        """Get cursor id, which is used"""
+        return self.__id
+
+    @property
+    def skipped_results(self):
+        return self._skipped_results
+ 
+    def compile(self):
+        return self
+
+
+class _IteratorCursor(_BaseCursor):
+    """
+    Iterable cursor wrapper around pymongo.Cursor.
 
     Returns results in format of EntityProto objects.
     """
@@ -302,13 +333,10 @@ class _IteratorCursor(object):
         datastore_pb.Query_Filter.GREATER_THAN_OR_EQUAL: '$gte',
     }
 
-    def __init__(self, query, app_id, db):
-        self._app_id = app_id
-        # just random string should be safe without need for thread locks
-        self.__id = "".join(random.sample(string.printable,25))
+    def __init__(self, query, db):
+        super(_IteratorCursor, self).__init__(query)
         self.__limit = 0
         self.__offset = 0
-        self.__skipped_results = 0
         self._projected_props = set(query.property_name_list())
         self._projected_mongo_props = set([x.replace(".", \
                 STRUCTURED_PROPERTY_DELIMITER) for x in query.property_name_list()])
@@ -398,20 +426,6 @@ class _IteratorCursor(object):
             self._filters[type_for_key] = {"$nin" : ["blob", "text", "local"]}
         return ordering
 
-    @property
-    def cursor(self):
-        """Get pymongo's cursor."""
-        return self.__cursor
-
-    @property
-    def id(self):
-        """Get cursor id, which is used"""
-        return self.__id
-
-    @property
-    def skipped_results(self):
-        return self.__skipped_results
-
     def offset(self, o):
         assert o >= 0
         self.__offset = o
@@ -429,7 +443,7 @@ class _IteratorCursor(object):
 
     def compile(self):
         o = min(self.__offset, self.__cursor.count(True))
-        self.__skipped_results = min(o, _MAX_QUERY_OFFSET)
+        self._skipped_results = min(o, _MAX_QUERY_OFFSET)
         return self
 
     def _prepare_properties(self, entity):
@@ -512,7 +526,6 @@ class _IteratorCursor(object):
             entity = _Document.from_mongo(e, self._app_id).to_pb()
             return self._prepare_properties(entity)
 
-
     def fetch_results(self, count):        
         if count == 0:
             count = 1
@@ -524,6 +537,65 @@ class _IteratorCursor(object):
             except StopIteration: break
         return entities
 
+
+
+class _PseudoKindCursor(_BaseCursor):
+    """
+    Special cursor for queries to pseudo kinds.
+
+    These are for example __kind__, __property__ etc.
+    """
+    def __init__(self, query, db, schema):
+        """
+        Constructor. See class doc for more info.
+
+        @param query: query for which we need to create cursor.
+        @type query: datastore_pb.Query
+        @param db: database of the application
+        @type db: pymongo.database.Database instance
+        @param schema: schema manager. Needed for __kind__ queries.
+        @type schema: MongoSchemaManager instance
+        """
+        super(_PseudoKindCursor, self).__init__(query)
+        self._schema = schema
+        if query.kind() == "__kind__":
+            self._is_kind = True
+            self._kinds = []
+            for kind in self._schema.get_kinds():
+                self._kinds.append(self._to_pseudo_entity(query, "__kind__", kind))
+            self.__cursor = None
+
+    def _to_pseudo_entity(self, query, *path):
+        pseudo_pb = entity_pb.EntityProto()
+        pseudo_pb.mutable_entity_group()
+        pseudo_pk = pseudo_pb.mutable_key()
+        pseudo_pk.set_app(query.app())
+        if query.has_name_space():
+             pseudo_pk.set_name_space(query.name_space())
+
+        for i in xrange(0, len(path), 2):
+            pseudo_pe = pseudo_pk.mutable_path().add_element()
+            pseudo_pe.set_type(path[i])
+        if isinstance(path[i + 1], basestring):
+            pseudo_pe.set_name(path[i + 1])
+        else:
+            pseudo_pe.set_id(path[i + 1])
+
+        return pseudo_pb
+
+    def __iter__(self): return self
+
+    def next(self):
+        if self._is_kind:
+            try:
+                return self._kinds.pop()
+            except IndexError:
+                raise StopIteration()
+        else:
+            raise RuntimeError("Wrong type of _PseudoKindCursor query.")
+
+    def fetch_results(self, count):
+        return [x for x in self]
 
 
 class MongoSchemaManager(object):
@@ -565,14 +637,14 @@ class MongoSchemaManager(object):
         """
         self._local_schema = {}
         for group in self._schema_coll.find():
-            kind = group['_id']
-            self._local_schema[kind] = group
+            coll = group['_id']
+            self._local_schema[coll] = group
     reload = load
 
 
     def get_type(self, kind, prop):
         """
-        Get type for kind and its property).
+        Get type for kind and its property.
         """
         try:
             group = self._local_schema[kind]
@@ -583,6 +655,12 @@ class MongoSchemaManager(object):
         except KeyError:
             raise KeyError("No such property %s.%s" % (kind, prop))
 
+
+    def get_kinds(self):
+        """
+        Get all kinds which are stored in datastore.
+        """
+        return [x['_kind'] for x in self._local_schema.values()]
 
 
 
@@ -631,6 +709,14 @@ class MongoDatastore(object):
 
 
     def put(self, entities):
+        """
+        Put all entities into datastore.
+
+        @param entities: list of entities to be stored.
+        @type entities: list<entity_pb.EntityProto>
+        @returns: list of keys of stored entities in the right order.
+        @rtype: list<datastore_types.Key>
+        """
         batch_insert = {}
         keys = []
         for e in entities:
@@ -720,9 +806,13 @@ class MongoDatastore(object):
     def query(self, query):
         """
         Returns cursor ID for given query.
+        @type query: datastore_pb.Query
         """
         coll_name = query.kind().lower()
-        cursor = _IteratorCursor(query, self._app_id, self._db)
+        if coll_name == '__kind__':
+            cursor = _PseudoKindCursor(query, self._db, self.schema)
+        else:
+            cursor = _IteratorCursor(query, self._db)
 
         # store cursor for further get_query_results() calls
         self._cursors[cursor.id] = cursor.compile()
