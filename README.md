@@ -23,7 +23,7 @@ from datastore_mongodb_stub import DatastoreMongoDBStub
 
 APP_ID = 'test'
 
-class MyTests(unittest.TestCase)
+class MyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """
