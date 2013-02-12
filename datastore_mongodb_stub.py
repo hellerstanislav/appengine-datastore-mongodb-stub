@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright 2007 Google Inc., 20013 10gen Inc.
+# Copyright 2007 Google Inc., 2013 10gen Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@
 """
 MongoDB-based stub for the Python datastore API.
 
-Entities are stored in an MongoDB database in documents and there is
-managed an meta-collection named _schema for managing schema of the
-collections/entity groups.
+Entities are stored in an MongoDB database as documents, properties store their
+type if needed. DatastoreMongoDBStub manages an meta-collection named _schema,
+where typed schema of the entity groups is stored.
 
 The whole implementation is targeted not to provide safe and durable datastore,
 but for highest possible performance. If you are looking for something more
@@ -66,12 +66,13 @@ STRUCTURED_PROPERTY_DELIMITER = "#!#"
 
 
 def parse_isoformat(datestring):
-    """
-    Try to parse date int ISO8061 format.
-    @param datestring: string containing ISO-formatted date.
-    @type datestring: basestring
-    @returns: datetime object
-    @rtype: datetime.datetime instance
+    """Try to parse date in ISO8061 format.
+
+    Args:
+      datestring: string containing ISO-formatted date.
+
+    Returns:
+      Converted datetime object - datetime.datetime instance.
     """
     try:
         return datetime.datetime.strptime(datestring, "%Y-%m-%dT%H:%M:%S.%f")
@@ -111,30 +112,45 @@ class _Key(object):
         #return random.randint(1, sys.maxint)
 
     def new(self):
-        """
-        Returns true if the key is new (not store into datastore).
+        """Check if the key is stored into datastore.
+        
+        Returns:
+          True if the key is new (not store into datastore).
         """
         return self._new
 
     def to_datastore_key(self):
-        """
-        @returns: key in datastore format
-        @rtype: datastore_types.Key
+        """Convert the key into datastore format.
+
+        Returns:
+          Converted key as datastore_types.Key
         """
         return datastore_types.Key.from_path(*self.path_chain, _app=self._app_id)
 
     def to_mongo_key(self):
-        """
-        @returns: datastore key in mongodb format, which is basically
-                  path connected with `-`, eg. Product-1-Image-4.
-        @rtype: str
+        """Convert this key into mongodb format.
+
+        Mongodb format is basically path connected with `-`, eg. Product-1-Image-4.
+
+        Returns:
+          Converted key as string.
         """
         return "-".join(map(str, self.path_chain))
 
     def collection(self):
+        """Get collection name which the key belongs to.
+
+        Returns:
+          Name of the collection as string.
+        """
         return self.path_chain[-2].lower()
 
     def kind(self):
+        """Get kind of the key.
+
+        Returns:
+          String representing the kind.
+        """
         return self.path_chain[-2]
 
     def __str__(self):
@@ -150,6 +166,8 @@ class _Document(object):
     Cares about translating data types from protobuf into mongo
     and from mongo into protobuf.
     """
+    # transformation functions from datastore types into format in
+    # which they are stored in mongodb.
     ENCODER = {
         datetime.datetime: lambda self, x: {"t":"datetime", "v":x.isoformat()},
         datastore_types.Blob: lambda self, x: {"t":"blob", "v": Binary(x)},
@@ -160,7 +178,7 @@ class _Document(object):
         datastore_types.Text: lambda self, x: {"t":"text", "v":x},
         datastore_types.EmbeddedEntity: lambda self, x: {"t":"local", "v":Binary(x)},
     }
-
+    # transformation functions from types in mongo into datastore types.
     DECODER = {
         "datetime": lambda self, x: parse_isoformat(x),
         "geo": lambda self, x: datastore_types.GeoPt(lat=x['y'], lon=x['x']),
@@ -185,8 +203,13 @@ class _Document(object):
         return {"t":"user", "v":d}
 
     def _encode_value(self, val):
-        """
-        Translate datstore value into mongodb value.
+        """Translate datstore value into mongodb value.
+
+        Args:
+          val: value to be encoded.
+
+        Returns:
+          Either directly the value or dict containing value and its type.
         """
         if val.__class__ in self.ENCODER:
             return self.ENCODER[val.__class__](self, val)
@@ -197,8 +220,13 @@ class _Document(object):
         return val
 
     def _decode_value(self, val):
-        """
-        Translate mongodb value into datastore value.
+        """Translate mongodb value into datastore value.
+
+        Args:
+          val: value to be decoded.
+
+        Returns:
+          Value in datastore format.
         """
         if isinstance(val, dict):
             return self.DECODER[val["t"]](self, val["v"])
@@ -207,8 +235,10 @@ class _Document(object):
         return val
 
     def _parse_pb(self, entity):
-        """
-        Parse datastore entity into _Document object.
+        """Parse datastore entity and store result into self.
+
+        Args:
+          entity: entity (entity_pb.EntityProto) to be parsed.
         """
         self._mongo_doc = {}
         self._mongo_doc['_id'] = self.key.to_mongo_key()
@@ -220,8 +250,10 @@ class _Document(object):
             self._mongo_doc[attr] = self._encode_value(v)
 
     def _parse_mongo(self, doc):
-        """
-        Parse mongodb document into _Document object.
+        """Parse mongodb document and store result into self.
+
+        Args:
+          doc: mongodb document to be parsed.
         """
         key = self.key.to_datastore_key()
         entity = datastore.Entity(kind=key.kind(), parent=key.parent(), name=key.name())
@@ -237,32 +269,48 @@ class _Document(object):
             self._entity.key().path().element_list()[-1].set_id(key.id())
 
     def is_new(self):
-        """
-        Returns True if this is new document (not stored into datastore)
+        """Check if the document is stored into database
+
+        Returns:
+          True if this is new document (not stored into datastore).
         """
         return self.key.new()
 
     def to_mongo(self):
-        """
-        Get MongoDB format of this document (entity).
+        """Get MongoDB format of this document (entity).
+
+        Returns:
+          Dict contaning the entity in format in which it is stored in mongodb.
         """
         return self._mongo_doc
 
     def to_pb(self):
-        """
-        Get datastore format of this document (entity).
-        @rtype: entity_pb.EntityProto
+        """Get datastore format of this document (entity).
+
+        Returns:
+          Entity in entity_pb.EntityProto format.
         """
         return self._entity
 
     def get_collection(self):
-        """
-        Get name of collection for this document.
+        """Get name of collection for this document.
+
+        Returns:
+          Name of the collection as string.
         """
         return self.key.collection()
 
     @classmethod
     def from_pb(cls, entity, app_id):
+        """Parses entity in protocol buffer format.
+
+        Args:
+          entity: entity_pb.EntityProto to be parsed.
+          app_id: string contaning the application ID.
+
+        Returns:
+          Instance of _Document class.
+        """
         d = cls(app_id)
         clone = entity_pb.EntityProto()
         clone.CopyFrom(entity)
@@ -273,6 +321,15 @@ class _Document(object):
 
     @classmethod
     def from_mongo(cls, doc, app_id):
+        """Parses entity in mongodb format.
+
+        Args:
+          doc: dict contaning entity to be parsed.
+          app_id: string contaning the application ID.
+
+        Returns:
+          Instance of _Document class.
+        """
         d = cls(app_id)
         d.key = _Key(doc['_id'], app_id)
         d._parse_mongo(doc)
@@ -280,12 +337,12 @@ class _Document(object):
         return d
 
     def get_schema(self):
-        """
-        Get schema of this document.
+        """Returns schema of this document.
 
         This method is specifically used by MongoSchemaManager.
-        @returns: dictionary representing schema of this entity.
-        @rtype: dict of pairs attr:type
+
+        Returns:
+          Dictionary representing schema of this entity.
         """
         schema = {"_id": self.get_collection(), "_kind": self.key.kind()}
         d = datastore.Entity._FromPb(self._entity)
@@ -314,12 +371,12 @@ class _BaseCursor(object):
 
     @property
     def cursor(self):
-        """Get pymongo's cursor."""
+        """Returns pymongo's cursor."""
         return self.__cursor
 
     @property
     def id(self):
-        """Get cursor id, which is used"""
+        """Returns cursor id, which is used in the stub."""
         return self.__id
 
     @property
@@ -327,6 +384,13 @@ class _BaseCursor(object):
         return self._skipped_results
  
     def compile(self):
+        """Performs last formatting of the cursor before emitting data.
+
+        This method is noop for pseudokind cursors.
+
+        Returns:
+          Always self.
+        """
         return self
 
 
@@ -334,13 +398,16 @@ class _IteratorCursor(_BaseCursor):
     """
     Iterable cursor wrapper around pymongo.Cursor.
 
-    Returns results in format of EntityProto objects.
+    Returns results in format of entity_pb.EntityProto objects. The cursor
+    returns partial entities when projection on repeated property is applied.
     """
+    # maps mongodb operators to appropriate python functions.
     _MONGO_FILTER_MAP = {"$lt": lambda x,y: x<y,
                          "$lte": lambda x,y: x<=y,
                          "$gte": lambda x,y: x>=y,
                          "$gt": lambda x,y: x>y}
 
+    # maps datastore query operators to mongodb ones.
     _DATASTORE_FILTER_MAP = {
         datastore_pb.Query_Filter.LESS_THAN: '$lt',
         datastore_pb.Query_Filter.LESS_THAN_OR_EQUAL: '$lte',
@@ -349,6 +416,15 @@ class _IteratorCursor(_BaseCursor):
     }
 
     def __init__(self, query, db):
+        """Constructor.
+
+        Initializes pymongo cursor inside this wrapper.
+
+        Args:
+          query: datastore query (datastore_pb.Query) for which the cursor
+                 is created.
+          db: pymongo.database.Database instance.
+        """
         super(_IteratorCursor, self).__init__(query)
         self.__limit = 0
         self.__offset = 0
@@ -379,14 +455,28 @@ class _IteratorCursor(_BaseCursor):
 
 
     def _projection(self, query):
-        """Get projection mongodb-like dictionary"""
+        """Get projection mongodb-like dictionary
+
+        Args:
+          query: datastore query (datastore_pb.Query).
+
+        Returns:
+          Projection specification for pymongo's Cursor.
+        """
         proj = {}
         for prop_name in query.property_name_list():
             proj[prop_name.replace(".", STRUCTURED_PROPERTY_DELIMITER)] = 1
         return proj
 
     def _get_filters(self, query):
-        """Translate filter specification for mongo query"""
+        """Get filter specification for mongo query.
+
+        Args:
+          query: datastore query (datastore_pb.Query).
+
+        Returns:
+          Dict of filters for pymongo's Cursor.
+        """
         filters = {}
         for f in query.filter_list():
             prop = f.property(0).name().decode('utf-8')
@@ -406,11 +496,20 @@ class _IteratorCursor(_BaseCursor):
         return filters
 
     def _ancestor_query(self, query):
+        """Handle ancestor queries. Adds new filter to _id attribute."""
         if query.has_ancestor():
             k = _Key(query.ancestor(), self._app_id).to_mongo_key()
             self._filters["_id"] = re.compile("%s" % k)
 
     def _ordering(self, query):
+        """Get sort orders in mongodb format.
+
+        Args:
+          query: datastore query (datastore_pb.Query).
+
+        Returns:
+          List of order dicts for pymongo.Cursor.
+        """
         ordering = []
         for order in query.order_list():
             key = order.property().decode('utf-8')
@@ -442,6 +541,7 @@ class _IteratorCursor(_BaseCursor):
         return ordering
 
     def offset(self, o):
+        """Apply offset to this cursor."""
         assert o >= 0
         self.__offset = o
         # HACK: ndb is probably requesting count()
@@ -451,24 +551,44 @@ class _IteratorCursor(_BaseCursor):
         return self
 
     def limit(self, l):
+        """Apply limit to this cursor."""
         assert l >= 0
         self.__limit = l
         self.__cursor.limit(l)
         return self
 
     def compile(self):
+        """Compiles this cursor.
+
+        In reality it counts skipped results for ndb's count() calls.
+        """
         o = min(self.__offset, self.__cursor.count(True))
         self._skipped_results = min(o, _MAX_QUERY_OFFSET)
         return self
 
     def _prepare_properties(self, entity):
-        """Prepare properties in case of projection query."""
+        """Prepares properties in case of projection query.
+
+        Args:
+          entity: entity_pb.EntityProto to be prepared.
+        """
         return LoadEntity(entity, keys_only=False,  # TODO: keys only???
                           property_names=self._projected_props)
 
     def __iter__(self): return self
 
     def _get_filter_fnc(self, filter_spec):
+        """Get filtering function for projected properties.
+
+        In case of projection query, returned function filters
+        results from datastore on app layer.
+
+        Args:
+          filter_spec: filter specification in pymongo's format.
+
+        Returns:
+          Function (lambda) performing the filter.
+        """
         if isinstance(filter_spec, dict):
             # inequality operator
             op, spec = filter_spec.items()[0]
@@ -482,6 +602,15 @@ class _IteratorCursor(_BaseCursor):
             return lambda x: x == spec
 
     def _filter_projected_values(self, prop, values):
+        """Filters values from repeated property in case of projection query.
+
+        Args:
+          prop: name of repeated property
+          values: list of the property's values.
+
+        Returns:
+          Filtered results.
+        """
         # is there some filter defined on this property?
         filter_fnc = []
         if prop in self._filters:
@@ -503,8 +632,15 @@ class _IteratorCursor(_BaseCursor):
         return result
 
     def _split_projected(self, e):
-        """
-        Split values of repeated property if it is projected.
+        """Splits values of repeated property if it is projected.
+
+        Inserts all partial entities into _projection_splitted list.
+
+        Args:
+          e: entity which could be potentionally splitted.
+
+        Returns:
+          True if the the splitting was done, False otherwise.
         """
         projected = set(e.keys()) & self._projected_mongo_props
         if not projected:
@@ -527,8 +663,8 @@ class _IteratorCursor(_BaseCursor):
         return True
 
     def next(self):
-        # HACK: if query has defined projection on repeated property,
-        # we fetch entity and split it into multiple entities which we
+        # If query has defined projection on repeated property, we fetch
+        # entity and split it into multiple partial entities which we
         # return sequentially by calling this method.
         if self._projection_splitted:
             return self._projection_splitted.pop()
@@ -541,7 +677,15 @@ class _IteratorCursor(_BaseCursor):
             entity = _Document.from_mongo(e, self._app_id).to_pb()
             return self._prepare_properties(entity)
 
-    def fetch_results(self, count):        
+    def fetch_results(self, count):
+        """Fetch entities from cursor and return list of them.
+
+        Args:
+          count: method returns at most *count* results.
+
+        Returns:
+          List of fetched entities. These can be full entities or partial ones.
+        """
         if count == 0:
             count = 1
         entities = []
