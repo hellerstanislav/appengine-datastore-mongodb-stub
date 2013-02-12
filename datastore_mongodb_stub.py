@@ -59,7 +59,7 @@ except ImportError:
 try:
     from pymongo.binary import Binary
 except ImportError:
-    from pymongo import Binary
+    from bson import Binary
 
 
 STRUCTURED_PROPERTY_DELIMITER = "#!#"
