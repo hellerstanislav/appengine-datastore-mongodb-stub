@@ -1,19 +1,34 @@
-"""
+#!/usr/bin/env python
+#
+# Copyright 2007 Google Inc., 20013 10gen Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-Datastore MongoDB Stub
-~~~~~~~~~~~~~~~~~~~~~~
+"""
+MongoDB-based stub for the Python datastore API.
+
+Entities are stored in an MongoDB database in documents and there is
+managed an meta-collection named _schema for managing schema of the
+collections/entity groups.
+
+The whole implementation is targeted not to provide safe and durable datastore,
+but for highest possible performance. If you are looking for something more
+conservative, use DatastoreSqliteStub.
+
+Transactions aren't supported.
 
 Author: Stanislav Heller, heller.stanislav@gmail.com
-Date: 21.1.2013
-
-Tested on:
-  pymongo version 2.1-2.4
-  mongodb 2.0.7
-
-TODO:
-- transaction support (consider mongodb 2-phase commit)
-- schema inspection
-
 """
 
 import collections
