@@ -6,13 +6,15 @@ This is a replacement for App Engine's default DatastoreFileStub and DatastoreSQ
 Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 [Mongo Appengine Connector](https://github.com/mdirolf/mongo-appengine-connector) (thx).
 
-Now adapted to SDK 1.7.4 with features of ndb like structured properties, query projection etc.
-
-Optimized for highest performance (safe=False for pymongo < 2.4, write concern w=0 for pymongo >= 2.4).
+**Features:**
+* compatibility with SDK 1.7.4 
+* supported features of ndb like structured properties, query projection etc.
+* optimized for highest performance (safe=False for pymongo < 2.4, write concern w=0 for pymongo >= 2.4).
+* tested againts behaviour of DatastoreFileStub.
 
 **Dependencies:**
-* python 2.7
-* pymongo >= 2.1
+* python 2.7 (tested on 2.7.3 [GCC 4.7.0 20120507 (Red Hat 4.7.0-5)])
+* pymongo >= 2.0 (for versions < 2.0 not tested)
 * mongodb >= 2.0
 
 
