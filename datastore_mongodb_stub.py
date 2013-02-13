@@ -40,9 +40,10 @@ import string
 import time
 import re
 import warnings
+import weakref
 
 from google.appengine.api import apiproxy_stub, datastore_types, datastore, users
-from google.appengine.datastore import entity_pb, datastore_pb
+from google.appengine.datastore import entity_pb, datastore_pb, datastore_stub_util
 from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, \
      _MAX_QUERY_OFFSET, LoadEntity
 from google.appengine.ext.blobstore import BlobKey
@@ -211,13 +212,25 @@ class _Document(object):
         Returns:
           Either directly the value or dict containing value and its type.
         """
+        def to_utf8(s):
+            if isinstance(s, unicode):
+                return s.encode('utf-8')
+            try:
+                s.decode('utf-8')
+                return s
+            except UnicodeDecodeError:
+                return "$UTF8$" + "~".join([str(ord(l)) for l in s])
+
         if val.__class__ in self.ENCODER:
             return self.ENCODER[val.__class__](self, val)
         elif val.__class__ is users.User:
             return self._encode_user(val)
         elif isinstance(val, list):
             return [self._encode_value(x) for x in val]
-        return val
+        elif isinstance(val, basestring):
+            return to_utf8(val)
+        else:
+            return val
 
     def _decode_value(self, val):
         """Translate mongodb value into datastore value.
@@ -228,10 +241,15 @@ class _Document(object):
         Returns:
           Value in datastore format.
         """
+        def from_utf8(s):
+            return "".join([chr(int(l)) for l in pp.split("~")])
+
         if isinstance(val, dict):
             return self.DECODER[val["t"]](self, val["v"])
         elif isinstance(val, list):
             return [self._decode_value(x) for x in val]
+        elif isinstance(val, str) and val.startswith("$UTF8$"):
+            return from_utf8(val)
         return val
 
     def _parse_pb(self, entity):
@@ -926,10 +944,11 @@ class MongoDatastore(object):
                 if coll_name not in batch_insert:
                     batch_insert[coll_name] = []
                 batch_insert[coll_name].append(doc.to_mongo())
-                self._db[coll_name].insert(doc.to_mongo())
+                #self._db[coll_name].insert(doc.to_mongo())
             else:
                 # update
                 coll = self._db[doc.get_collection()]
+                #print doc.to_mongo()
                 coll.save(doc.to_mongo())
             keys.append(doc.key.to_datastore_key())
         # batch insert
@@ -1040,7 +1059,9 @@ class MongoDatastore(object):
 
 
 
-class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
+class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
+                           apiproxy_stub.APIProxyStub,
+                           datastore_stub_util.DatastoreStub):
     """
     Persistent stub for the Python datastore API.
 
@@ -1069,82 +1090,17 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
           mongodb_host: string, mongodb host address.
           mongodb_port: int, port on which the mongod server runs.
         """
-        super(DatastoreMongoDBStub, self).__init__(service_name)
         assert isinstance(app_id, str), app_id != ''
-        self._datastore = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
 
-    def _Dynamic_Get(self, request, response):
-        """Gets the entities for the given keys (request.key_list()).
+        datastore_stub_util.BaseDatastore.__init__(self, require_indexes,
+                                                   consistency_policy)
+        apiproxy_stub.APIProxyStub.__init__(self, service_name)
+        datastore_stub_util.DatastoreStub.__init__(self, weakref.proxy(self),
+                                                   app_id, trusted=False, root_path=None)
 
-        Args:
-          request: google.appengine.datastore.datastore_pb.GetRequest.
-          response: google.appengine.datastore.datastore_pb.GetResponse.
-        """
-        entities = self._datastore.get(request.key_list())
-        for e in entities:
-            wrapper = response.add_entity()
-            if e is not None:
-                wrapper.mutable_entity().CopyFrom(e)
+        self._mongods = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
+       
 
-    def _Dynamic_Put(self, request, response):
-        """Writes the given given entities.
-
-        Updates an entity's key and entity_group in place if needed.
-
-        Args:
-          request: google.appengine.datastore.datastore_pb.PutRequest.
-          response: google.appengine.datastore.datastore_pb.PutResponse.
-        """
-        keys = self._datastore.put(request.entity_list())
-        response.key_list().extend([key._ToPb() for key in keys])
-
-    def _Dynamic_Delete(self, delete_request, delete_response):
-        """Deletes the entities associated with the given keys.
-
-        Args:
-          delete_request: google.appengine.datastore.datastore_pb.DeleteRequest
-          delete_response: not used.
-        """
-        self._datastore.delete(delete_request.key_list())
-
-    def _Dynamic_RunQuery(self, query, query_result):
-        """Perform a query and get a cursor.
-
-        Args:
-          query: google.appengine.datastore.datastore_pb.Query.
-          query_result: google.appengine.datastore.datastore_pb.QueryResult.
-
-        Raises: apiproxy_errors.ApplicationError
-        """
-        if query.keys_only():
-            query_result.set_keys_only(True)
-        cursor = self._datastore.query(query)
-        query_result.mutable_cursor().set_cursor(cursor.id)
-        query_result.set_more_results(True)
-
-        query_result.set_skipped_results(cursor.skipped_results)
-
-        if query.compile():
-            compiled_query = query_result.mutable_compiled_query()
-            compiled_query.set_keys_only(query.keys_only())
-            compiled_query.mutable_primaryscan().set_index_name(query.Encode())
-
-    def _Dynamic_Next(self, next_request, query_result):
-        """Returns next bunch of results from cursor.
-
-        Args:
-          next_request: google.appengine.datastore.datastore_pb.NextRequest.
-        """
-        cursor_id = next_request.cursor().cursor()
-        count = next_request.count()
-        cursor = self._datastore.get_cursor(cursor_id)
-        entities = cursor.fetch_results(count)
-        query_result.result_list().extend(entities)
-        query_result.set_more_results(False)
-
-    def Clear(self):
-        """Clears the whole datastore."""
-        self._datastore.clear()
 
     def MakeSyncCall(self, service, call, request, response):
         """
@@ -1166,5 +1122,92 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
         explanation = []
         assert response.IsInitialized(explanation), explanation
 
-    # TODO: def SetConsistencyPolicy
+
+    def Clear(self):
+        """Clears the whole datastore."""
+        self._mongods.clear()
+
+    def Read(self):
+        """Noop"""
+        pass
+
+    def Close(self):
+        """Noop"""
+
+    def _Put(self, entity, insert):
+        entity = datastore_stub_util.StoreEntity(entity)
+        self._mongods.put([entity])
+
+    def _Get(self, key):
+        entity = self._mongods.get([key])[0]
+        return datastore_stub_util.LoadEntity(entity)
+
+    def _AllocateIds(self, reference, size=1, max_id=None):
+        datastore_stub_util.CheckAppId(reference.app(),
+                                       self._trusted, self._app_id)
+        datastore_stub_util.Check(not (size and max_id),
+                                  'Both size and max cannot be set.')
+
+        t = long(time.time() * 10000000)
+        return (t, t+size)
+
+    def _Delete(self, key):
+        self._mongods.delete([key])
+
+    def _GetEntitiesInEntityGroup(self, entity_group):
+        query = datastore_pb.Query()
+        query.set_kind(entity_group.path().element_list()[0].type())
+        query.set_app(entity_group.app())
+        if entity_group.name_space():
+            query.set_name_space(entity_group.name_space())
+        query.mutable_ancestor().CopyFrom(entity_group)
+
+        cursor = self._mongods.query(query)
+        return dict((datastore_types.ReferenceToKeyValue(entity.key()), entity)
+                     for entity in cursor)
+
+
+    def _GetQueryCursor(self, query, filters, orders, index_list):
+        return None
+        """Returns a query cursor for the provided query.
+
+        Args:
+          conn: The SQLite connection.
+          query: A datastore_pb.Query protobuf.
+        Returns:
+          A QueryCursor object.
+        """
+        if query.has_kind() and query.kind() in self._pseudo_kinds:
+            cursor = self._pseudo_kinds[query.kind()].Query(query, filters, orders)
+            datastore_stub_util.Check(cursor,
+                                      'Could not create query for pseudo-kind')
+        else:
+            orders = datastore_stub_util._GuessOrders(filters, orders)
+            filter_info = self.__GenerateFilterInfo(filters, query)
+            order_info = self.__GenerateOrderInfo(orders)
+
+            for strategy in DatastoreSqliteStub._QUERY_STRATEGIES:
+                result = strategy(self, query, filter_info, order_info)
+                if result:
+                    break
+            else:
+                raise apiproxy_errors.ApplicationError(
+                    datastore_pb.Error.BAD_REQUEST,
+                    'No strategy found to satisfy query.')
+
+           sql_stmt, params = result
+
+           conn = self._GetConnection()
+           try:
+               if query.property_name_list():
+                   db_cursor = _ProjectionPartialEntityGenerator(
+                       conn.execute(sql_stmt, params))
+               else:
+                   db_cursor = _DedupingEntityGenerator(conn.execute(sql_stmt, params))
+                   dsquery = datastore_stub_util._MakeQuery(query, filters, orders)
+                   cursor = datastore_stub_util.IteratorCursor(
+                       query, dsquery, orders, index_list, db_cursor)
+           finally:
+               self._ReleaseConnection(conn)
+        return cursor
 

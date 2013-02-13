@@ -1250,7 +1250,7 @@ class TestDatastoreMongodbStub(_DatastoreStubTests, unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls._datastore_stub._datastore.clear()
+        cls._datastore_stub.Clear()
 
     @classmethod
     def setUpClass(cls):
