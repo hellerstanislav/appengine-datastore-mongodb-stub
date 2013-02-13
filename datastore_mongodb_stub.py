@@ -1168,7 +1168,6 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
 
 
     def _GetQueryCursor(self, query, filters, orders, index_list):
-        return None
         """Returns a query cursor for the provided query.
 
         Args:
@@ -1177,37 +1176,10 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         Returns:
           A QueryCursor object.
         """
-        if query.has_kind() and query.kind() in self._pseudo_kinds:
-            cursor = self._pseudo_kinds[query.kind()].Query(query, filters, orders)
-            datastore_stub_util.Check(cursor,
-                                      'Could not create query for pseudo-kind')
-        else:
-            orders = datastore_stub_util._GuessOrders(filters, orders)
-            filter_info = self.__GenerateFilterInfo(filters, query)
-            order_info = self.__GenerateOrderInfo(orders)
-
-            for strategy in DatastoreSqliteStub._QUERY_STRATEGIES:
-                result = strategy(self, query, filter_info, order_info)
-                if result:
-                    break
-            else:
-                raise apiproxy_errors.ApplicationError(
-                    datastore_pb.Error.BAD_REQUEST,
-                    'No strategy found to satisfy query.')
-
-           sql_stmt, params = result
-
-           conn = self._GetConnection()
-           try:
-               if query.property_name_list():
-                   db_cursor = _ProjectionPartialEntityGenerator(
-                       conn.execute(sql_stmt, params))
-               else:
-                   db_cursor = _DedupingEntityGenerator(conn.execute(sql_stmt, params))
-                   dsquery = datastore_stub_util._MakeQuery(query, filters, orders)
-                   cursor = datastore_stub_util.IteratorCursor(
-                       query, dsquery, orders, index_list, db_cursor)
-           finally:
-               self._ReleaseConnection(conn)
+        db_cursor = self._mongods.query(query)
+        orders = datastore_stub_util._GuessOrders(filters, orders)
+        dsquery = datastore_stub_util._MakeQuery(query, filters, orders)
+        cursor = datastore_stub_util.IteratorCursor(query, dsquery, orders,
+                                                    index_list, db_cursor)
         return cursor
 
