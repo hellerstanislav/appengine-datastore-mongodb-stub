@@ -88,11 +88,6 @@ Notes
 * Missing tests for threaded environment.
 * Query projection on multiple repeated properties not supported yet.
 * Index treating not supported yet.
-* Transactions unsupported.
-* Problem with native ordering - sometimes it happens to upper layer (ndb) giving entities
-  to put into datastore in wrong order. Then some tests fail because default ordering should
-  be by insert time, which is wrong in this case.
-* Consistency policy not supported yet.
 * Datastore statistics not supported yet.
 * SDK Development Console not fully supported (because of missing indices support).
 
