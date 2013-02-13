@@ -705,15 +705,14 @@ class _PseudoKindCursor(_BaseCursor):
     These are for example __kind__, __property__ etc.
     """
     def __init__(self, query, db, schema):
-        """
-        Constructor. See class doc for more info.
+        """Constructor. 
 
-        @param query: query for which we need to create cursor.
-        @type query: datastore_pb.Query
-        @param db: database of the application
-        @type db: pymongo.database.Database instance
-        @param schema: schema manager. Needed for __kind__ queries.
-        @type schema: MongoSchemaManager instance
+        Initializes cursor, which is not a real pymongo Cursor.
+
+        Args:
+          query: query (datastore_pb.Query) for which we create the cursor.
+          db: database of the application (pymongo.database.Database instance)
+          schema: schema manager. Needed for __kind__ queries.
         """
         super(_PseudoKindCursor, self).__init__(query)
         self._schema = schema
@@ -725,6 +724,7 @@ class _PseudoKindCursor(_BaseCursor):
             self.__cursor = None
 
     def _to_pseudo_entity(self, query, *path):
+        """Convert path to pseudo entity"""
         pseudo_pb = entity_pb.EntityProto()
         pseudo_pb.mutable_entity_group()
         pseudo_pk = pseudo_pb.mutable_key()
@@ -754,7 +754,17 @@ class _PseudoKindCursor(_BaseCursor):
             raise RuntimeError("Wrong type of _PseudoKindCursor query.")
 
     def fetch_results(self, count):
+        """Fetch all results from the cursor.
+
+        Args:
+          count: just for compatibility with BaseCursor. In this class
+                 there's no usage of this param.
+
+        Returns:
+          List of pseudo-entities.
+        """
         return [x for x in self]
+
 
 
 class MongoSchemaManager(object):
@@ -762,23 +772,29 @@ class MongoSchemaManager(object):
     Schema manager for datastore MongoDB stub.
 
     Schema is in format:
-    {_id: coll_name, attr: type, ...}
+    {_id: coll_name, _kind: kind, attr: type, ...}
     """
 
     #: name of collection where to search for schema
     SCHEMA_COLLECTION = '_schema'
 
     def __init__(self, db):
+        """Constructor.
+
+        Initializes schema manager.
+
+        Args:
+          db: database of the application (pymongo.database.Database instance). 
+        """
         self._db = db
         self._schema_coll = self._db[self.SCHEMA_COLLECTION]
         self._local_schema = {}
 
     def update_if_changed(self, schema):
-        """
-        Updates schema for one entity group.
+        """Updates schema for one entity group.
 
-        @param schema: dictionary containing schema for one entity group.
-        @type schema: dict
+        Args:
+          schema: dictionary containing schema for one entity group.
         """
         coll_name = schema['_id']
         if coll_name not in self._local_schema:
@@ -791,19 +807,25 @@ class MongoSchemaManager(object):
                 self._local_schema[coll_name] = schema
 
     def load(self):
-        """
-        Loads the schema from mongo db into datastore stub.
-        """
+        """Loads the schema from mongo db into datastore stub."""
         self._local_schema = {}
         for group in self._schema_coll.find():
             coll = group['_id']
             self._local_schema[coll] = group
     reload = load
 
-
     def get_type(self, kind, prop):
-        """
-        Get type for kind and its property.
+        """Get type for kind and its property.
+
+        Args:
+          kind: string, kind where we search for the property.
+          prop: string, property of which we want to get the type.
+
+        Returns:
+          Appropriate property type as string.
+
+        Raises:
+          KeyError if kind or property not found.
         """
         try:
             group = self._local_schema[kind]
@@ -814,10 +836,11 @@ class MongoSchemaManager(object):
         except KeyError:
             raise KeyError("No such property %s.%s" % (kind, prop))
 
-
     def get_kinds(self):
-        """
-        Get all kinds which are stored in datastore.
+        """Get all kinds which are stored in datastore.
+
+        Returns:
+          List of strings representing names of kinds.
         """
         return [x['_kind'] for x in self._local_schema.values()]
 
@@ -831,11 +854,26 @@ class MongoIndexManager(object):
 
 class MongoDatastore(object):
     """
-    Base MongoDB Datastore responsible for storing and retrieving data from
-    MongoDB database.
+    Base MongoDB Datastore.
+
+    This class is responsible for storing and retrieving data from MongoDB
+    database except for querying the database - this task is handled
+    by cursors.
     """
 
-    def __init__(self, host, port, app_id, require_indexes):
+    def __init__(self, host, port, app_id, require_indexes=False):
+        """Constructor.
+
+        Creates mongodb connection (in case of pymongo 2.4 MongoClient)
+        and initializes a few helpers.
+
+        Args:
+          host: string, mongodb host.
+          port: int, port on which the mongod server runs.
+          app_id: string representing the application ID.
+          require_indexes: bool, default False. If True, composite indexes must
+              exist in index.yaml for queries that need them.
+        """
         self._app_id = app_id
         self._require_indexes = require_indexes
         # get connection
@@ -859,22 +897,22 @@ class MongoDatastore(object):
 
     schema = property(lambda self: self._schema)
 
-
     @property
     def write_concern(self):
+        """Dictionary representing MongoClient's write concern."""
         if not PYM_2_4:
             raise RuntimeError("write_concern is for pymongo >= 2.4 only.")
         return self._conn.write_concern
 
-
     def put(self, entities):
-        """
-        Put all entities into datastore.
+        """Puts all entities into datastore.
 
-        @param entities: list of entities to be stored.
-        @type entities: list<entity_pb.EntityProto>
-        @returns: list of keys of stored entities in the right order.
-        @rtype: list<datastore_types.Key>
+        Args:
+          entities: list of entities (entity_pb.EntityProto) to be stored.
+
+        Returns:
+          list of datastore_types.Key instances of stored entities in
+          the right order.
         """
         batch_insert = {}
         keys = []
@@ -900,19 +938,19 @@ class MongoDatastore(object):
             coll.insert(batch_insert[coll_name])
         return keys
 
-
     def get(self, keys):
-        """
-        Get entities by given keys.
+        """Get entities by given keys.
 
-        @param keys: list of keys to be fetched
-        @type keys: list<entity_pb.Reference>
-        @returns: list of entities
-        @rtype: list<entity_pb.EntityProto>
+        Args:
+          keys: list of keys (entity_pb.Reference) to be fetched.
+
+        Returns:
+           list of fetched entities (entity_pb.EntityProto).
         """
         batch_get = {}
         entities = collections.OrderedDict()
-        # translate datastore keys (references) to mongodb keys and sort by collection
+        # translate datastore keys (references) to mongodb keys and sort
+        # by collection
         for key in keys:
             k = _Key(key, self._app_id)
             if k.collection() not in batch_get:
@@ -929,13 +967,11 @@ class MongoDatastore(object):
                 entities[d['_id']] = _Document.from_mongo(d, self._app_id).to_pb()
         return entities.values()
 
-
     def delete(self, keys):
-        """
-        Delete entities by given keys.
+        """Delete entities by given keys.
 
-        @param keys: list of keys to be deleted
-        @type keys: list<entity_pb.Reference>
+        Args:
+          keys: list of keys (entity_pb.Reference) to be deleted.
         """
         ids = {}
         for key in keys:
@@ -946,26 +982,33 @@ class MongoDatastore(object):
             coll = self._db[coll_name]
             coll.remove({'_id': {'$in': ids[coll_name]}})
 
-
     def clear(self):
-        """
-        Clear the whole datastore.
-        """
+        """Clear the whole datastore."""
         self._conn.drop_database(self._app_id)
 
-
     def get_cursor(self, cursor_id):
+        """Get cursor by given cursor_id.
+
+        Args:
+          cursor_id: string.
+
+        Returns:
+          Cursor (either _IteratorCursor or _PseudoKindCursor instance).
+        """
         try:
             return self._cursors[cursor_id]
         except KeyError:
             raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
                                                   'Cursor %d not found' % cursor_id)
 
-
     def query(self, query):
-        """
-        Returns cursor ID for given query.
-        @type query: datastore_pb.Query
+        """Perform a query on specified kind or pseudokind.
+    
+        Args:
+          query: datastore_pb.Query to be performed.
+
+        Returns:
+          string, cursor ID for given query.
         """
         coll_name = query.kind().lower()
         if coll_name == '__kind__':
@@ -976,7 +1019,6 @@ class MongoDatastore(object):
         # store cursor for further get_query_results() calls
         self._cursors[cursor.id] = cursor.compile()
         return cursor
-
 
     def _check_indexes(self, query):
        if self._require_indexes:
@@ -998,11 +1040,12 @@ class MongoDatastore(object):
 
 
 
-
 class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
     """
-    Datastore stub based on MongoDB.
+    Persistent stub for the Python datastore API.
 
+    Maps datastore service calls on to a MongoDatastore, which
+    stores all entities in an MongoDB database.
     """
     def __init__(self,
                  app_id,
@@ -1011,29 +1054,31 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
                  consistency_policy=None,
                  mongodb_host='localhost',
                  mongodb_port=27017):
-        """
-        @param app_id: jednoznacny identifikator aplikace
-        @param require_indexes: true, pokud maji byt vyzadovany indexy
-        @param service_name: jmeno sluzby, musi byt 'datastore_v3'
-        @param consistency_policy: nastaveni konzistence uloziste (kvuli HRD)
+        """Constructor.
 
-        @type app_id: str
-        @type require_indexes: bool
-        @type service_name: str
-        @type consistency_policy: google.appengine.datastore.datastore_stub_util.*ConsistencyPolicy
-        @type mongodb_network_timeout
+        Initializes stub and connection to mongodb.
+
+        Args:
+          app_id: string, application ID.
+          require_indexes: bool, default False. If True, composite indexes must
+              exist in index.yaml for queries that need them.
+          service_name: name of the service, default 'datastore_v3'.
+          consistency_policy: The consistency policy to use or None to use the
+              default. Consistency policies can be found in
+              datastore_stub_util.*ConsistencyPolicy
+          mongodb_host: string, mongodb host address.
+          mongodb_port: int, port on which the mongod server runs.
         """
         super(DatastoreMongoDBStub, self).__init__(service_name)
         assert isinstance(app_id, str), app_id != ''
         self._datastore = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
 
-
     def _Dynamic_Get(self, request, response):
-        """
-        Ziska vsechny entity, jejichz id je v request.key_list().
+        """Gets the entities for the given keys (request.key_list()).
 
-        @type request: google.appengine.datastore.datastore_pb.GetRequest
-        @type response: google.appengine.datastore.datastore_pb.GetResponse
+        Args:
+          request: google.appengine.datastore.datastore_pb.GetRequest.
+          response: google.appengine.datastore.datastore_pb.GetResponse.
         """
         entities = self._datastore.get(request.key_list())
         for e in entities:
@@ -1041,35 +1086,35 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
             if e is not None:
                 wrapper.mutable_entity().CopyFrom(e)
 
-
     def _Dynamic_Put(self, request, response):
-        """
-        Zapise (pripadne prepise) do datastore vsechny entity, ktere jsou
-        v request.entity_list().
+        """Writes the given given entities.
 
-        @type request: google.appengine.datastore.datastore_pb.PutRequest
-        @type response: google.appengine.datastore.datastore_pb.PutResponse
+        Updates an entity's key and entity_group in place if needed.
+
+        Args:
+          request: google.appengine.datastore.datastore_pb.PutRequest.
+          response: google.appengine.datastore.datastore_pb.PutResponse.
         """
         keys = self._datastore.put(request.entity_list())
         response.key_list().extend([key._ToPb() for key in keys])
 
-
     def _Dynamic_Delete(self, delete_request, delete_response):
-        """
-        Vymaze vsechny entity, ktere jsou v request.key_list().
+        """Deletes the entities associated with the given keys.
 
-        @type request: google.appengine.datastore.datastore_pb.DeleteRequest
-        @type response: nepouziva se.
+        Args:
+          delete_request: google.appengine.datastore.datastore_pb.DeleteRequest
+          delete_response: not used.
         """
         self._datastore.delete(delete_request.key_list())
 
-
     def _Dynamic_RunQuery(self, query, query_result):
-        """
-        Ziska kurzor pro dany dotaz.
-        @type query: google.appengine.datastore.datastore_pb.Query
-        @type query_result: google.appengine.datastore.datastore_pb.QueryResult
-        @raises: apiproxy_errors.ApplicationError
+        """Perform a query and get a cursor.
+
+        Args:
+          query: google.appengine.datastore.datastore_pb.Query.
+          query_result: google.appengine.datastore.datastore_pb.QueryResult.
+
+        Raises: apiproxy_errors.ApplicationError
         """
         if query.keys_only():
             query_result.set_keys_only(True)
@@ -1084,11 +1129,11 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
             compiled_query.set_keys_only(query.keys_only())
             compiled_query.mutable_primaryscan().set_index_name(query.Encode())
 
-
     def _Dynamic_Next(self, next_request, query_result):
-        """
-        Ziska balik dalsich vysledku z kurzoru.
-        @type next_request: google.appengine.datastore.datastore_pb.NextRequest
+        """Returns next bunch of results from cursor.
+
+        Args:
+          next_request: google.appengine.datastore.datastore_pb.NextRequest.
         """
         cursor_id = next_request.cursor().cursor()
         count = next_request.count()
@@ -1097,28 +1142,22 @@ class DatastoreMongoDBStub(apiproxy_stub.APIProxyStub):
         query_result.result_list().extend(entities)
         query_result.set_more_results(False)
 
-
     def Clear(self):
-        """
-        Vymaze cely datastore.
-        """
+        """Clears the whole datastore."""
         self._datastore.clear()
-
 
     def MakeSyncCall(self, service, call, request, response):
         """
-        Zakladni vstupni metoda RPC volani.
+        Base input RPC method.
 
-        @param service: nazev sluzby datastore. Mel by byt 'datastore_v3'.
-        @param call: string reprezentujici nazev RPC metody, ktera se ma provest.
-                     Metoda musi byt implementovana s nazvem _Dynamic_<call>.
-        @param request: zprava protocol bufferu korespondujici s volanim.
-        @param response: zprava protocol bufferu korespondujici s navratovou
-                         hodnotou volani.
-        @type service: str
-        @type call: str
-        @type: request: podtrida google.net.proto.ProtocolBuffer.ProtocolMessage
-        @type response: podtrida google.net.proto.ProtocolBuffer.ProtocolMessage
+        Args:
+          service: name of the service. Should be 'datastore_v3'.
+          call: string, name of the RPC method. Method must be implemented as
+              _Dynamic_<call> in the stub.
+          request: request message of protobuf. Subclass of
+              google.net.proto.ProtocolBuffer.ProtocolMessage.
+          response: response message of protobuf. Subclass of
+              google.net.proto.ProtocolBuffer.ProtocolMessage
         """
         super(DatastoreMongoDBStub, self).MakeSyncCall(service,
                                                        call,
