@@ -22,12 +22,6 @@ Entities are stored in an MongoDB database as documents, properties store their
 type if needed. DatastoreMongoDBStub manages an meta-collection named _schema,
 where typed schema of the entity groups is stored.
 
-The whole implementation is targeted not to provide safe and durable datastore,
-but for highest possible performance. If you are looking for something more
-conservative, use DatastoreSqliteStub.
-
-Transactions aren't supported.
-
 Author: Stanislav Heller, heller.stanislav@gmail.com
 """
 
@@ -1004,21 +998,6 @@ class MongoDatastore(object):
     def clear(self):
         """Clear the whole datastore."""
         self._conn.drop_database(self._app_id)
-
-    def get_cursor(self, cursor_id):
-        """Get cursor by given cursor_id.
-
-        Args:
-          cursor_id: string.
-
-        Returns:
-          Cursor (either _IteratorCursor or _PseudoKindCursor instance).
-        """
-        try:
-            return self._cursors[cursor_id]
-        except KeyError:
-            raise apiproxy_errors.ApplicationError(datastore_pb.Error.BAD_REQUEST,
-                                                  'Cursor %d not found' % cursor_id)
 
     def query(self, query):
         """Perform a query on specified kind or pseudokind.
