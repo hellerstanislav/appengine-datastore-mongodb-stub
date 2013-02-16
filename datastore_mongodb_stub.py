@@ -85,7 +85,6 @@ class _Key(object):
     """
     def __init__(self, key, app_id):
        self._app_id = app_id
-       self._new = False
        if isinstance(key, basestring):
            # mongo _id
            self.path_chain = key.split("-")
@@ -95,24 +94,11 @@ class _Key(object):
        elif isinstance(key, entity_pb.Reference):
            # protobuf
            path = key.path().element_list()
-           # if new key (entity is not stored into datastore), generate
-           # new random monotonically increasing id.
-           if path[-1].id() == 0 and not path[-1].has_name():
-                path[-1].set_id(self._gen_id())
-                self._new = True
            self.path_chain = [x for x in itertools.chain(*[(a.type(), a.id()) for a in path])]
 
     def _gen_id(self):
         return int(time.time() * 10000000)
         #return random.randint(1, sys.maxint)
-
-    def new(self):
-        """Check if the key is stored into datastore.
-        
-        Returns:
-          True if the key is new (not store into datastore).
-        """
-        return self._new
 
     def to_datastore_key(self):
         """Convert the key into datastore format.
@@ -138,7 +124,7 @@ class _Key(object):
         Returns:
           Name of the collection as string.
         """
-        return self.path_chain[-2].lower()
+        return self.path_chain[0].lower()
 
     def kind(self):
         """Get kind of the key.
@@ -279,14 +265,6 @@ class _Document(object):
         self._entity = entity._ToPb()
         if not key.name():
             self._entity.key().path().element_list()[-1].set_id(key.id())
-
-    def is_new(self):
-        """Check if the document is stored into database
-
-        Returns:
-          True if this is new document (not stored into datastore).
-        """
-        return self.key.new()
 
     def to_mongo(self):
         """Get MongoDB format of this document (entity).
@@ -440,6 +418,8 @@ class _IteratorCursor(_BaseCursor):
         super(_IteratorCursor, self).__init__(query)
         self.__limit = 0
         self.__offset = 0
+        self.__query = query
+        self._skipped_results = 0
         self._projected_props = set(query.property_name_list())
         self._projected_mongo_props = set([x.replace(".", \
                 STRUCTURED_PROPERTY_DELIMITER) for x in query.property_name_list()])
@@ -465,6 +445,17 @@ class _IteratorCursor(_BaseCursor):
         if query.has_limit():
             self.limit(query.limit())
 
+        self._dummy = self._dummy_proto()
+
+    def _dummy_proto(self):
+        pb = entity_pb.EntityProto()
+        pb.mutable_entity_group()
+        pk = pb.mutable_key()
+        pk.set_app(self.__query.app())
+        pe = pk.mutable_path().add_element()
+        pe.set_type(self.__query.kind())
+        pe.set_id(0)
+        return pb
 
     def _projection(self, query):
         """Get projection mongodb-like dictionary
@@ -574,8 +565,6 @@ class _IteratorCursor(_BaseCursor):
 
         In reality it counts skipped results for ndb's count() calls.
         """
-        o = min(self.__offset, self.__cursor.count(True))
-        self._skipped_results = min(o, _MAX_QUERY_OFFSET)
         return self
 
     def _prepare_properties(self, entity):
@@ -674,7 +663,19 @@ class _IteratorCursor(_BaseCursor):
             self._projection_splitted.insert(0, self._prepare_properties(e_proto))
         return True
 
+    def _next_offset(self):
+        if self.__offset > 10000:
+            return False
+        if self._skipped_results < self.__offset:
+            self._skipped_results += 1
+            return True
+        return False
+
     def next(self):
+        # Return dummy result in case of offset
+        if self._next_offset():
+            return self._dummy
+
         # If query has defined projection on repeated property, we fetch
         # entity and split it into multiple partial entities which we
         # return sequentially by calling this method.
@@ -932,23 +933,10 @@ class MongoDatastore(object):
             doc = _Document.from_pb(e, self._app_id)
             # update schema
             self.schema.update_if_changed(doc.get_schema())
-            # is insert?
-            if doc.is_new():
-                coll_name = doc.get_collection()
-                if coll_name not in batch_insert:
-                    batch_insert[coll_name] = []
-                batch_insert[coll_name].append(doc.to_mongo())
-                #self._db[coll_name].insert(doc.to_mongo())
-            else:
-                # update
-                coll = self._db[doc.get_collection()]
-                #print doc.to_mongo()
-                coll.save(doc.to_mongo())
+            # insert / overwrite
+            coll = self._db[doc.get_collection()]
+            coll.save(doc.to_mongo())
             keys.append(doc.key.to_datastore_key())
-        # batch insert
-        for coll_name in batch_insert:
-            coll = self._db[coll_name]
-            coll.insert(batch_insert[coll_name])
         return keys
 
     def get(self, keys):
