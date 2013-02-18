@@ -344,6 +344,17 @@ class _Document(object):
             schema[k] = type_
         return schema
 
+    def iter_mongo_indexes(self):
+        for attr, val in self._mongo_doc.iteritems():
+            if attr in ('_id', '__scatter__'):
+                continue
+            if isinstance(val, dict):
+                t = "%s.t" % attr
+                v = "%s.v" % attr
+                yield [(v, ASCENDING), (t, ASCENDING)]
+            else:
+                yield attr
+
     def __str__(self):
         return "_Document(%s)" % str(self._mongo_doc)
 
@@ -918,6 +929,12 @@ class MongoDatastore(object):
             raise RuntimeError("write_concern is for pymongo >= 2.4 only.")
         return self._conn.write_concern
 
+    def _ensure_noncomposite_indexes(self, doc):
+        """Simulate EntitiesByPropertyASC and EntitiesByPropertyDESC indexes"""
+        coll = self._db[doc.get_collection()]
+        for spec in doc.iter_mongo_indexes():
+            coll.ensure_index(spec, cache_for=3600)
+
     def put(self, entities):
         """Puts all entities into datastore.
 
@@ -937,6 +954,8 @@ class MongoDatastore(object):
             # insert / overwrite
             coll = self._db[doc.get_collection()]
             coll.save(doc.to_mongo())
+            # be sure to have all indexes (EntitiesByPropertyASC & DESC)
+            self._ensure_noncomposite_indexes(doc)
             keys.append(doc.key.to_datastore_key())
         return keys
 
@@ -1006,6 +1025,10 @@ class MongoDatastore(object):
         # store cursor for further get_query_results() calls
         self._cursors[cursor.id] = cursor.compile()
         return cursor
+
+    def update_indexes(self, indices):
+        d = {'_id' : 1, 'payload': buffer(indices.Encode())}
+        self._db['_indexes'].save(d)
 
 
 
@@ -1130,5 +1153,11 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         cursor = datastore_stub_util.IteratorCursor(query, dsquery, orders,
                                                     index_list, db_cursor)
         return cursor
+
+    def _OnIndexChange(self, app_id):
+        indices = datastore_pb.CompositeIndices()
+        for index in self.GetIndexes(app_id, True, self._app_id):
+            indices.index_list().append(index)
+        self._mongods.update_indexes(indices)
 
 
