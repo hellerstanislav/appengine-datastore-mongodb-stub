@@ -480,12 +480,19 @@ class _IteratorCursor(_BaseCursor):
         Returns:
           Dict of filters for pymongo's Cursor.
         """
+        # dummy document, XXX: needs refactoring
+        _d = _Document('a')
         filters = {}
         for f in query.filter_list():
+            # resolve property name and value
             prop = f.property(0).name().decode('utf-8')
-            val = datastore_types.FromPropertyPb(f.property_list()[0])
             if prop == "__key__":
                 prop = "_id"
+            prop = prop.replace(".", STRUCTURED_PROPERTY_DELIMITER)
+
+            val = datastore_types.FromPropertyPb(f.property_list()[0])
+            val = _d._encode_value(val)
+
             # transform filter value of nonequality filter
             if f.op() != datastore_pb.Query_Filter.EQUAL:
                 val = {self._DATASTORE_FILTER_MAP[f.op()] : val}
@@ -664,7 +671,7 @@ class _IteratorCursor(_BaseCursor):
         return True
 
     def _next_offset(self):
-        if self.__offset > 10000:
+        if self.__offset > 10000: # XXX ?
             return False
         if self._skipped_results < self.__offset:
             self._skipped_results += 1
@@ -859,12 +866,6 @@ class MongoSchemaManager(object):
 
 
 
-class MongoIndexManager(object):
-    pass
-
-
-
-
 class MongoDatastore(object):
     """
     Base MongoDB Datastore.
@@ -1006,24 +1007,6 @@ class MongoDatastore(object):
         self._cursors[cursor.id] = cursor.compile()
         return cursor
 
-    def _check_indexes(self, query):
-       if self._require_indexes:
-            required, kind, ancestor, props, num_eq_filters = datastore_index.CompositeIndexForQuery(query)
-            if required:
-                index = entity_pb.CompositeIndex()
-                index.mutable_definition().set_entity_type(kind)
-                index.mutable_definition().set_ancestor(ancestor)
-                for (k, v) in props:
-                    p = index.mutable_definition().add_property()
-                    p.set_name(k)
-                    p.set_direction(v)
-
-                if props and not self.__has_index(index):
-                    raise apiproxy_errors.ApplicationError(datastore_pb.Error.NEED_INDEX,
-                        "This query requires a composite index that is not defined. "
-                        "You must update the index.yaml file in your application root.")
-
-
 
 
 class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
@@ -1096,7 +1079,6 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
 
     def Read(self):
         """Noop"""
-        pass
 
     def Close(self):
         """Noop"""
@@ -1133,7 +1115,6 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         return dict((datastore_types.ReferenceToKeyValue(entity.key()), entity)
                      for entity in cursor)
 
-
     def _GetQueryCursor(self, query, filters, orders, index_list):
         """Returns a query cursor for the provided query.
 
@@ -1149,4 +1130,5 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         cursor = datastore_stub_util.IteratorCursor(query, dsquery, orders,
                                                     index_list, db_cursor)
         return cursor
+
 

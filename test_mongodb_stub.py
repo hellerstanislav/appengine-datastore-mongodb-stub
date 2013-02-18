@@ -610,6 +610,45 @@ class _DatastoreStubTests(object):
         finally:
             k.delete()
 
+
+    def test_query_filter_geopt(self):
+        class Q(ndb.Model):
+            a = ndb.GeoPtProperty()
+
+        e = [Q(a=ndb.GeoPt(i*2.17, (10-i)*1.17)) for i in xrange(10)]
+        k = ndb.put_multi(e)
+        try:
+            g = Q.query(Q.a == ndb.GeoPt(4.34, 9.36)).get()
+            self.assertNotEqual(g, None)
+            self.assertEqual(g.a, ndb.GeoPt(4.34, 9.36))
+            l = Q.query(Q.a < ndb.GeoPt(4.34, 9.36)).order(Q.a).fetch()
+            ref = [datastore_types.GeoPt(0.0, 11.7), datastore_types.GeoPt(2.17, 10.53)]
+            self.assertEqual(map(lambda x: x.a, l), ref)
+        finally:
+            ndb.delete_multi(k)
+
+
+    def test_query_filter_structured_property(self):
+        Q, e = self._gen_entities(4, ndb.StructuredProperty)
+        k = ndb.put_multi(e)
+        try:
+            l = Q.query(Q.a.m == 0).get()
+            self.assertEqual(l, e[0])
+        finally:
+            ndb.delete_multi(k)
+
+
+    def test_query_filter_date(self):
+        Q, e = self._gen_entities(4, ndb.DateProperty)
+        keys = ndb.put_multi(e)
+        try:
+            d = Q.query(Q.a == datetime.date(2013,1,1)).get()
+            self.assertNotEqual(d, None)
+            self.assertEqual(d.a, datetime.date(2013,1,1))
+        finally:
+            ndb.delete_multi(keys)
+
+
     # QUERY OPTIONS
 
     def test_query_opt_ancestor(self):
