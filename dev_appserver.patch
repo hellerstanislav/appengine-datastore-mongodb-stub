@@ -1,5 +1,5 @@
 diff --git a/appengine/tools/api_server.py b/appengine/tools/api_server.py
-index 7b1c23e..1edc3bf 100644
+index 7b1c23e..72de06c 100644
 --- a/appengine/tools/api_server.py
 +++ b/appengine/tools/api_server.py
 @@ -66,6 +66,7 @@ from google.appengine.api.xmpp import xmpp_service_stub
@@ -26,7 +26,7 @@ index 7b1c23e..1edc3bf 100644
      high_replication: A bool indicating whether to use the high replication
          consistency model.
      datastore_path: The path to the file that should be used for datastore
-@@ -345,6 +348,13 @@ def _SetupStubs(
+@@ -345,6 +348,14 @@ def _SetupStubs(
          datastore_require_indexes,
          trusted,
          root_path=application_root)
@@ -34,13 +34,14 @@ index 7b1c23e..1edc3bf 100644
 +    daatstore = datastore_mongodb_stub.DatastoreMongoDBStub(
 +        app_id,
 +        require_indexes=datastore_require_indexes,
++        root_path=application_root,
 +        service_name='datastore_v3',
 +        mongodb_host='localhost',
 +        mongodb_port=27017)
    else:
      datastore = datastore_file_stub.DatastoreFileStub(
          app_id,
-@@ -483,6 +493,10 @@ def ParseCommandArguments(args):
+@@ -483,6 +494,10 @@ def ParseCommandArguments(args):
                        action=boolean_action.BooleanAction,
                        const=True,
                        default=False)
@@ -51,7 +52,7 @@ index 7b1c23e..1edc3bf 100644
    parser.add_argument('--high_replication',
                        action=boolean_action.BooleanAction,
                        const=True,
-@@ -573,7 +587,8 @@ class APIServerProcess(object):
+@@ -573,7 +588,8 @@ class APIServerProcess(object):
                 smtp_user=None,
                 task_retry_seconds=None,
                 trusted=None,
@@ -61,7 +62,7 @@ index 7b1c23e..1edc3bf 100644
      """Configures the APIs hosted by this server.
  
      Args:
-@@ -631,6 +646,7 @@ class APIServerProcess(object):
+@@ -631,6 +647,7 @@ class APIServerProcess(object):
        trusted: A bool indicating if privileged APIs should be made available.
        use_sqlite: A bool indicating whether DatastoreSqliteStub or
            DatastoreFileStub should be used.
@@ -69,7 +70,7 @@ index 7b1c23e..1edc3bf 100644
      """
      self._process = None
      self._host = host
-@@ -663,6 +679,7 @@ class APIServerProcess(object):
+@@ -663,6 +680,7 @@ class APIServerProcess(object):
      self._BindArgument('--task_retry_seconds', task_retry_seconds)
      self._BindArgument('--trusted', trusted)
      self._BindArgument('--use_sqlite', use_sqlite)
@@ -77,7 +78,7 @@ index 7b1c23e..1edc3bf 100644
  
    @property
    def url(self):
-@@ -779,6 +796,7 @@ def main():
+@@ -779,6 +797,7 @@ def main():
                blobstore_path=args.blobstore_path,
                datastore_path=args.datastore_path,
                use_sqlite=args.use_sqlite,
@@ -86,7 +87,7 @@ index 7b1c23e..1edc3bf 100644
                datastore_require_indexes=args.require_indexes,
                images_host_prefix=application_address,
 diff --git a/appengine/tools/dev_appserver.py b/appengine/tools/dev_appserver.py
-index 199f791..dcafef2 100644
+index 199f791..77943a6 100644
 --- a/appengine/tools/dev_appserver.py
 +++ b/appengine/tools/dev_appserver.py
 @@ -131,6 +131,7 @@ from google.appengine.api.system import system_stub
@@ -120,11 +121,20 @@ index 199f791..dcafef2 100644
 +    elif use_mongodb:
 +      datastore = datastore_mongodb_stub.DatastoreMongoDBStub(
 +            app_id, require_indexes=require_indexes,
-+            service_name='datastore_v3', mongodb_host='localhost',
-+            mongodb_port=27017)
++            service_name='datastore_v3', root_path=root_path,
++            mongodb_host='localhost', mongodb_port=27017)
      else:
        logging.warning(FILE_STUB_DEPRECATION_MESSAGE)
        datastore = datastore_file_stub.DatastoreFileStub(
+@@ -3868,7 +3876,7 @@ def PortAllEntities(datastore_path):
+     apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
+ 
+     entities = FetchAllEntitites()
+-    sqlite_datastore_stub = datastore_sqlite_stub.DatastoreSqliteStub(app_id,
++    sqlite_datastore_stub = datastore_sqlite_stub.iteStub(app_id,
+                             datastore_path + '.sqlite', trusted=True)
+     apiproxy_stub_map.apiproxy.ReplaceStub('datastore_v3',
+                                            sqlite_datastore_stub)
 diff --git a/appengine/tools/dev_appserver_main.py b/appengine/tools/dev_appserver_main.py
 index 13a6ae9..79ce7db 100644
 --- a/appengine/tools/dev_appserver_main.py

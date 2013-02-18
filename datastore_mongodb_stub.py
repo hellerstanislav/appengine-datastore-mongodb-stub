@@ -1027,7 +1027,7 @@ class MongoDatastore(object):
         return cursor
 
     def update_indexes(self, indices):
-        d = {'_id' : 1, 'payload': buffer(indices.Encode())}
+        d = {'_id' : 1, 'indexes': Binary(indices.Encode())}
         self._db['_indexes'].save(d)
 
 
@@ -1046,6 +1046,7 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
                  require_indexes=False,
                  service_name='datastore_v3',
                  consistency_policy=None,
+                 root_path=None,
                  mongodb_host='localhost',
                  mongodb_port=27017):
         """Constructor.
@@ -1069,11 +1070,10 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
                                                    consistency_policy)
         apiproxy_stub.APIProxyStub.__init__(self, service_name)
         datastore_stub_util.DatastoreStub.__init__(self, weakref.proxy(self),
-                                                   app_id, trusted=False, root_path=None)
+                                                   app_id, trusted=False, root_path=root_path)
 
         self._mongods = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
-       
-
+        
 
     def MakeSyncCall(self, service, call, request, response):
         """
