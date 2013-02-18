@@ -86,9 +86,6 @@ Notes
 =====
 * Tested only on ndb (google.appengine.ext.ndb).
 * Missing tests for threaded environment.
-* Query projection on multiple repeated properties not supported yet.
-* Index treating not supported yet.
-* Datastore statistics not supported yet.
-* SDK Development Console not fully supported (because of missing indices support).
-
+* Query projection on multiple repeated properties not supported.
+* Datastore statistics in SDK devel console not supported yet (bug in handling CSRF token).
 
