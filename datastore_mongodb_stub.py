@@ -88,17 +88,19 @@ class _Key(object):
        if isinstance(key, basestring):
            # mongo _id
            self.path_chain = key.split("-")
-           for i in xrange(1, len(self.path_chain), 2):
-               self.path_chain[i] = int(self.path_chain[i])
            
        elif isinstance(key, entity_pb.Reference):
            # protobuf
            path = key.path().element_list()
-           self.path_chain = [x for x in itertools.chain(*[(a.type(), a.id()) for a in path])]
-
-    def _gen_id(self):
-        return int(time.time() * 10000000)
-        #return random.randint(1, sys.maxint)
+           self.path_chain = []
+           for elem in path:
+               self.path_chain.append(elem.type())
+               if elem.has_id():
+                   self.path_chain.append(elem.id())
+               elif elem.has_name():
+                   self.path_chain.append(elem.name())
+               else:
+                   raise RuntimeException("Path element doesnt have id neither name.")
 
     def to_datastore_key(self):
         """Convert the key into datastore format.
@@ -136,7 +138,6 @@ class _Key(object):
 
     def __str__(self):
         return "_Key(%s)" % self.to_mongo_key()
-
 
 
 
