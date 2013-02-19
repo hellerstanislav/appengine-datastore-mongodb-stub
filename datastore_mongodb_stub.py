@@ -1031,6 +1031,11 @@ class MongoDatastore(object):
         d = {'_id' : 1, 'indexes': Binary(indices.Encode())}
         self._db['_indexes'].save(d)
 
+    def load_indexes(self):
+        i = self._db['_indexes'].find_one(1)
+        if not i: return None
+        return i['indexes']
+
 
 
 class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
@@ -1072,9 +1077,18 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         apiproxy_stub.APIProxyStub.__init__(self, service_name)
         datastore_stub_util.DatastoreStub.__init__(self, weakref.proxy(self),
                                                    app_id, trusted=False, root_path=root_path)
-
+        # initialize inner mongo datastore
         self._mongods = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
-        
+        # load indexes into stub
+        index_proto = self._mongods.load_indexes()
+        if index_proto:
+            indexes = datastore_pb.CompositeIndices(index_proto)
+            for index in indexes.index_list():
+                # XXX: because self._SideLoadIndex(index) thwors AttributeError,
+                # because it uses app() method insead of app_id(), inserting
+                # index is hard-wired and imitates the _SideLoadIndex method
+                self._BaseIndexManager__indexes[index.app_id()].append(index)
+
 
     def MakeSyncCall(self, service, call, request, response):
         """
