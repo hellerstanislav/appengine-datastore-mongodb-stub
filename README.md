@@ -70,8 +70,6 @@ class MyTests(unittest.TestCase):
         # datastore stub
         datastore_stub = DatastoreMongoDBStub(APP_ID,
                                               require_indexes=False,
-                                              service_name='datastore_v3',
-                                              consistency_policy=None,
                                               mongodb_host='localhost',
                                               mongodb_port=27017)
         # we can now edit pymongo.MongoClient's write_concern to use journaling
@@ -86,6 +84,8 @@ Notes
 =====
 * Tested only on ndb (google.appengine.ext.ndb).
 * Missing tests for threaded environment.
+* Missing transaction tests.
+* Namespaces not supported.
 * Query projection on multiple repeated properties not supported.
-* Datastore statistics in SDK devel console not supported yet (bug in handling CSRF token).
+* Datastore statistics in SDK devel console not supported yet.
 
