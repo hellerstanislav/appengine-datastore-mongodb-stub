@@ -84,23 +84,30 @@ class _Key(object):
     functionalities.
     """
     def __init__(self, key, app_id):
-       self._app_id = app_id
-       if isinstance(key, basestring):
-           # mongo _id
-           self.path_chain = key.split("-")
-           
-       elif isinstance(key, entity_pb.Reference):
-           # protobuf
-           path = key.path().element_list()
-           self.path_chain = []
-           for elem in path:
-               self.path_chain.append(elem.type())
-               if elem.has_id():
-                   self.path_chain.append(elem.id())
-               elif elem.has_name():
-                   self.path_chain.append(elem.name())
-               else:
-                   raise RuntimeException("Path element doesnt have id neither name.")
+        self._app_id = app_id
+        self.path_chain = []
+        if isinstance(key, dict):
+            # mongo _id
+            self._mongo_key = key['dskey']
+            for elem in self._mongo_key:
+                type_, id_ = elem.split("-")
+                try: id_ = int(id_)
+                except: pass
+                self.path_chain.extend([type_, id_])
+
+        elif isinstance(key, entity_pb.Reference):
+            # protobuf
+            path = key.path().element_list()
+            self._mongo_key = []
+            for elem in path:
+                if elem.has_id():
+                    self._mongo_key.append(elem.type() + "-" + str(elem.id()))
+                    self.path_chain.extend([elem.type(), elem.id()])
+                elif elem.has_name():
+                    self._mongo_key.append(elem.type() + "-" + elem.name())
+                    self.path_chain.extend([elem.type(), elem.name()])
+                else:
+                    raise RuntimeException("Path element doesnt have id neither name.")
 
     def to_datastore_key(self):
         """Convert the key into datastore format.
@@ -118,7 +125,7 @@ class _Key(object):
         Returns:
           Converted key as string.
         """
-        return "-".join(map(str, self.path_chain))
+        return {'dskey': self._mongo_key}
 
     def collection(self):
         """Get collection name which the key belongs to.
@@ -137,7 +144,7 @@ class _Key(object):
         return self.path_chain[-2]
 
     def __str__(self):
-        return "_Key(%s)" % self.to_mongo_key()
+        return "_Key(%s)" % self._mongo_key
 
 
 
@@ -499,7 +506,7 @@ class _IteratorCursor(_BaseCursor):
             # resolve property name and value
             prop = f.property(0).name().decode('utf-8')
             if prop == "__key__":
-                prop = "_id"
+                prop = "_id.dskey"
             prop = prop.replace(".", STRUCTURED_PROPERTY_DELIMITER)
 
             val = datastore_types.FromPropertyPb(f.property_list()[0])
@@ -520,8 +527,8 @@ class _IteratorCursor(_BaseCursor):
     def _ancestor_query(self, query):
         """Handle ancestor queries. Adds new filter to _id attribute."""
         if query.has_ancestor():
-            k = _Key(query.ancestor(), self._app_id).to_mongo_key()
-            self._filters["_id"] = re.compile("%s" % k)
+            k = _Key(query.ancestor(), self._app_id)._mongo_key
+            self._filters["_id.dskey"] = {'$all' : k}
 
     def _ordering(self, query):
         """Get sort orders in mongodb format.
@@ -541,7 +548,7 @@ class _IteratorCursor(_BaseCursor):
 
             # translate key attribute
             if key == "__key__":
-                key = "_id"
+                key = "_id.dskey"
             # translate structured property attributes
             key = key.replace(".", STRUCTURED_PROPERTY_DELIMITER)
 
@@ -933,6 +940,7 @@ class MongoDatastore(object):
     def _ensure_noncomposite_indexes(self, doc):
         """Simulate EntitiesByPropertyASC and EntitiesByPropertyDESC indexes"""
         coll = self._db[doc.get_collection()]
+        coll.ensure_index('_id.dskey', cache_for=7200)
         for spec in doc.iter_mongo_indexes():
             coll.ensure_index(spec, cache_for=3600)
 
@@ -960,49 +968,31 @@ class MongoDatastore(object):
             keys.append(doc.key.to_datastore_key())
         return keys
 
-    def get(self, keys):
-        """Get entities by given keys.
+    def get(self, key):
+        """Get entity by given key.
 
         Args:
-          keys: list of keys (entity_pb.Reference) to be fetched.
+          keys: key (entity_pb.Reference) to be fetched.
 
         Returns:
-           list of fetched entities (entity_pb.EntityProto).
+           fetched entity (entity_pb.EntityProto).
         """
-        batch_get = {}
-        entities = collections.OrderedDict()
-        # translate datastore keys (references) to mongodb keys and sort
-        # by collection
-        for key in keys:
-            k = _Key(key, self._app_id)
-            if k.collection() not in batch_get:
-                batch_get[k.collection()] = []
-            mongo_key = k.to_mongo_key()
-            batch_get[k.collection()].append(mongo_key)
-            entities[mongo_key] = None
+        # translate datastore key (references) to mongodb key
+        k = _Key(key, self._app_id)
+        doc = self._db[k.collection()].find({'_id.dskey': {'$all': k._mongo_key}})
+        if not doc:
+            return None
+        return _Document.from_mongo(d, self._app_id).to_pb()
 
-        # for each collection do batch get
-        for coll_name in batch_get:
-            docs = self._db[coll_name].find({'_id': {'$in': batch_get[coll_name]}})
-            # insert in right order
-            for d in docs:
-                entities[d['_id']] = _Document.from_mongo(d, self._app_id).to_pb()
-        return entities.values()
-
-    def delete(self, keys):
-        """Delete entities by given keys.
+    def delete(self, key):
+        """Delete entity by given key.
 
         Args:
-          keys: list of keys (entity_pb.Reference) to be deleted.
+          key: key (entity_pb.Reference) to be deleted.
         """
-        ids = {}
-        for key in keys:
-            k = _Key(key, self._app_id)
-            if k.collection() not in ids: ids[k.collection()] = []
-            ids[k.collection()].append(k.to_mongo_key())
-        for coll_name in ids:
-            coll = self._db[coll_name]
-            coll.remove({'_id': {'$in': ids[coll_name]}})
+        k = _Key(key, self._app_id)
+        coll = self._db[k.collection()]
+        coll.remove({'_id.dskey': {'$all': k._mongo_key}})
 
     def clear(self):
         """Clear the whole datastore."""
@@ -1126,7 +1116,7 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         self._mongods.put([entity])
 
     def _Get(self, key):
-        entity = self._mongods.get([key])[0]
+        entity = self._mongods.get(key)
         return datastore_stub_util.LoadEntity(entity)
 
     def _AllocateIds(self, reference, size=1, max_id=None):
@@ -1139,7 +1129,7 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         return (t, t+size)
 
     def _Delete(self, key):
-        self._mongods.delete([key])
+        self._mongods.delete(key)
 
     def _GetEntitiesInEntityGroup(self, entity_group):
         query = datastore_pb.Query()
