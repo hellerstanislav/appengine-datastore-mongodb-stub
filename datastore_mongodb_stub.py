@@ -403,6 +403,7 @@ class _BaseCursor(object):
         return self
 
 
+
 class _IteratorCursor(_BaseCursor):
     """
     Iterable cursor wrapper around pymongo.Cursor.
@@ -586,13 +587,6 @@ class _IteratorCursor(_BaseCursor):
         self.__cursor.limit(l)
         return self
 
-    def compile(self):
-        """Compiles this cursor.
-
-        In reality it counts skipped results for ndb's count() calls.
-        """
-        return self
-
     def _prepare_properties(self, entity):
         """Prepares properties in case of projection query.
 
@@ -716,25 +710,6 @@ class _IteratorCursor(_BaseCursor):
             entity = _Document.from_mongo(e, self._app_id).to_pb()
             return self._prepare_properties(entity)
 
-    def fetch_results(self, count):
-        """Fetch entities from cursor and return list of them.
-
-        Args:
-          count: method returns at most *count* results.
-
-        Returns:
-          List of fetched entities. These can be full entities or partial ones.
-        """
-        if count == 0:
-            count = 1
-        entities = []
-        for _ in xrange(count):
-            try:
-                entity = self.next()
-                entities.append(entity)
-            except StopIteration: break
-        return entities
-
 
 
 class _PseudoKindCursor(_BaseCursor):
@@ -791,18 +766,6 @@ class _PseudoKindCursor(_BaseCursor):
                 raise StopIteration()
         else:
             raise RuntimeError("Wrong type of _PseudoKindCursor query.")
-
-    def fetch_results(self, count):
-        """Fetch all results from the cursor.
-
-        Args:
-          count: just for compatibility with BaseCursor. In this class
-                 there's no usage of this param.
-
-        Returns:
-          List of pseudo-entities.
-        """
-        return [x for x in self]
 
 
 
@@ -1013,8 +976,6 @@ class MongoDatastore(object):
         else:
             cursor = _IteratorCursor(query, self._db)
 
-        # store cursor for further get_query_results() calls
-        self._cursors[cursor.id] = cursor.compile()
         return cursor
 
     def update_indexes(self, indices):
@@ -1066,9 +1027,14 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
                                                    consistency_policy)
         apiproxy_stub.APIProxyStub.__init__(self, service_name)
         datastore_stub_util.DatastoreStub.__init__(self, weakref.proxy(self),
-                                                   app_id, trusted=False, root_path=root_path)
+                                                   app_id, trusted=False,
+                                                   root_path=root_path)
+        # speed-up dict for _EntitiesByEntityGroup method taken
+        # from DatastoreFileStub
+        self.__entities_by_group = collections.defaultdict(dict)
         # initialize inner mongo datastore
-        self._mongods = MongoDatastore(mongodb_host, mongodb_port, app_id, require_indexes)
+        self._mongods = MongoDatastore(mongodb_host, mongodb_port, app_id,
+                                       require_indexes)
         # load indexes into stub
         index_proto = self._mongods.load_indexes()
         if index_proto:
@@ -1104,6 +1070,7 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
     def Clear(self):
         """Clears the whole datastore."""
         self._mongods.clear()
+        self.__entities_by_group = collections.defaultdict(dict)
 
     def Read(self):
         """Noop"""
@@ -1111,8 +1078,18 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
     def Close(self):
         """Noop"""
 
+    def _GetEntityLocaltion(self, key):
+        entity_group = datastore_stub_util._GetEntityGroup(key)
+        eg_k = datastore_types.ReferenceToKeyValue(entity_group)
+        k = datastore_types.ReferenceToKeyValue(key)
+        return (eg_k, k)
+
     def _Put(self, entity, insert):
         entity = datastore_stub_util.StoreEntity(entity)
+        # store entity into entity group dict
+        eg_k, k = self._GetEntityLocaltion(entity.key())
+        self.__entities_by_group[eg_k][k] = entity
+        # put into mongo 
         self._mongods.put([entity])
 
     def _Get(self, key):
@@ -1129,9 +1106,21 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         return (t, t+size)
 
     def _Delete(self, key):
+        eg_k, k = self._GetEntityLocaltion(key)
+        try:
+            del self.__entities_by_group[eg_k][k]
+            if not self.__entities_by_group[eg_k]:
+                del self.__entities_by_group[eg_k]
+        except KeyError:
+            pass
         self._mongods.delete(key)
 
     def _GetEntitiesInEntityGroup(self, entity_group):
+        try:
+            eg_k = datastore_types.ReferenceToKeyValue(entity_group)
+            return self.__entities_by_group[eg_k].copy()
+        except KeyError:
+            pass
         query = datastore_pb.Query()
         query.set_kind(entity_group.path().element_list()[0].type())
         query.set_app(entity_group.app())
