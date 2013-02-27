@@ -74,7 +74,7 @@ class MyTests(unittest.TestCase):
                                               mongodb_port=27017)
         # we can now edit pymongo.MongoClient's write_concern to use journaling
         # this option is only for pymongo version >= 2.4
-        datastore_stub._datastore.write_concern['j'] = True
+        datastore_stub._mongods.write_concern['j'] = True
         apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
 ```
 
