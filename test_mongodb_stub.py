@@ -5,13 +5,14 @@ import string
 import datetime
 import sys
 import textwrap
+import weakref
 
 from google.appengine.api import apiproxy_stub_map, datastore_types, users
 from google.appengine.api.memcache import memcache_stub
 from google.appengine.api.user_service_stub import UserServiceStub
 from google.appengine.api.datastore_file_stub import DatastoreFileStub
-from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, _MAX_QUERY_OFFSET
-
+from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, \
+    _MAX_QUERY_OFFSET, PseudoRandomHRConsistencyPolicy, MasterSlaveConsistencyPolicy
 from google.appengine.ext import ndb
 from google.appengine.ext.blobstore import BlobKey
 
@@ -20,11 +21,25 @@ from google.appengine.ext.blobstore import BlobKey
 from datastore_mongodb_stub import DatastoreMongoDBStub
 
 # TODO: thread tests
-# TODO: indexes
 # TODO: Projection queries on multivalued properties
 # TODO: Datastore statistics
 
 APP_ID = 'test'
+
+
+class HRConsistencyPolicy(object):
+    """Helper context manager for setting stub's consistency policy"""
+    def __init__(self, stub):
+        self.stub = weakref.proxy(stub)
+
+    def __enter__(self):
+        policy = PseudoRandomHRConsistencyPolicy()
+        self.stub.SetConsistencyPolicy(policy)
+
+    def __exit__(self, *args, **kwargs):
+        policy = MasterSlaveConsistencyPolicy()
+        self.stub.SetConsistencyPolicy(policy)
+
 
 class _DatastoreStubTests(object):
     """
@@ -46,7 +61,6 @@ class _DatastoreStubTests(object):
         # user stub
         user_stub = UserServiceStub()
         apiproxy_stub_map.apiproxy.RegisterStub('user', user_stub)
-
 
 
     # PUT, GET
@@ -1258,6 +1272,28 @@ class _DatastoreStubTests(object):
         finally:
             k.delete()
        
+    # TRANSACTIONS
+
+    def test_transaction_classic(self):
+        #with HRConsistencyPolicy(self._datastore_stub):
+        class T(ndb.Model):
+            a = ndb.StringProperty()
+        @ndb.transactional()
+        def t():
+            T(a='hello').put()
+        t()
+
+    def test_transaction_xg(self):
+        with HRConsistencyPolicy(self._datastore_stub):
+            class T(ndb.Model):
+                a = ndb.StringProperty()
+            class S(ndb.Model):
+                b = ndb.IntegerProperty()
+            @ndb.transactional(xg=True)
+            def t():
+                T(a='hello').put()
+                S(b=123).put()
+            t()
 
 
 class TestDatastoreFileStub(_DatastoreStubTests, unittest.TestCase):
@@ -1273,7 +1309,7 @@ class TestDatastoreFileStub(_DatastoreStubTests, unittest.TestCase):
     def setUpClass(cls):
         datastore_stub = DatastoreFileStub(APP_ID, None, None)
         apiproxy_stub_map.apiproxy.ReplaceStub('datastore_v3', datastore_stub)
-
+        cls._datastore_stub = datastore_stub
         underline = '~'*len(cls.__name__)
         sys.stderr.write(underline + '\n' +cls.__name__ + '\n' + underline \
                          + textwrap.dedent(cls.__doc__) + '\n')
