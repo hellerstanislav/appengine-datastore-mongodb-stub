@@ -39,7 +39,7 @@ import weakref
 from google.appengine.api import apiproxy_stub, datastore_types, datastore, users
 from google.appengine.datastore import entity_pb, datastore_pb, datastore_stub_util
 from google.appengine.datastore.datastore_stub_util import _MAXIMUM_RESULTS, \
-     _MAX_QUERY_OFFSET, LoadEntity
+     _MAX_QUERY_OFFSET, LoadEntity, ParseNamespaceQuery
 from google.appengine.ext.blobstore import BlobKey
 from google.appengine.runtime import apiproxy_errors
 
@@ -375,32 +375,6 @@ class _BaseCursor(object):
     def __init__(self, query):
         self._app_id = query.app()
         self._skipped_results = 0
-        # just random string should be safe without need for thread locks
-        self.__id = "".join(random.sample(string.printable,25))
-
-    @property
-    def cursor(self):
-        """Returns pymongo's cursor."""
-        return self.__cursor
-
-    @property
-    def id(self):
-        """Returns cursor id, which is used in the stub."""
-        return self.__id
-
-    @property
-    def skipped_results(self):
-        return self._skipped_results
- 
-    def compile(self):
-        """Performs last formatting of the cursor before emitting data.
-
-        This method is noop for pseudokind cursors.
-
-        Returns:
-          Always self.
-        """
-        return self
 
 
 
@@ -716,7 +690,7 @@ class _PseudoKindCursor(_BaseCursor):
     """
     Special cursor for queries to pseudo kinds.
 
-    These are for example __kind__, __property__ etc.
+    These are for example __kind__, __property__, __namespace__, etc.
     """
     def __init__(self, query, db, schema):
         """Constructor. 
@@ -730,12 +704,15 @@ class _PseudoKindCursor(_BaseCursor):
         """
         super(_PseudoKindCursor, self).__init__(query)
         self._schema = schema
-        if query.kind() == "__kind__":
-            self._is_kind = True
-            self._kinds = []
+        self._payload = []
+        self._pseudokind = query.kind()
+        if self._pseudokind == "__kind__":
             for kind in self._schema.get_kinds():
-                self._kinds.append(self._to_pseudo_entity(query, "__kind__", kind))
-            self.__cursor = None
+                self._payload.append(self._to_pseudo_entity(query, "__kind__", kind))
+        elif self._pseudokind == "__namespace__":
+            self._payload.append(self._to_pseudo_entity(query, "__namespace__", 1))
+        else:
+            raise RuntimeError("Wrong type of _PseudoKindCursor query.")
 
     def _to_pseudo_entity(self, query, *path):
         """Convert path to pseudo entity"""
@@ -745,7 +722,6 @@ class _PseudoKindCursor(_BaseCursor):
         pseudo_pk.set_app(query.app())
         if query.has_name_space():
              pseudo_pk.set_name_space(query.name_space())
-
         for i in xrange(0, len(path), 2):
             pseudo_pe = pseudo_pk.mutable_path().add_element()
             pseudo_pe.set_type(path[i])
@@ -753,19 +729,26 @@ class _PseudoKindCursor(_BaseCursor):
             pseudo_pe.set_name(path[i + 1])
         else:
             pseudo_pe.set_id(path[i + 1])
-
         return pseudo_pb
 
     def __iter__(self): return self
 
     def next(self):
-        if self._is_kind:
-            try:
-                return self._kinds.pop()
-            except IndexError:
-                raise StopIteration()
-        else:
-            raise RuntimeError("Wrong type of _PseudoKindCursor query.")
+        try:
+            return self._payload.pop()
+        except IndexError:
+            raise StopIteration()
+
+
+
+def _StatCursor(query, db):
+    """Just a dummy cursor returning all entities in database"""
+    app_id = query.app()
+    cols = set(db.collection_names())
+    cols -= set([u'_indexes', u'system.indexes', u'_schema'])
+    for c in cols:
+        for e in db[c].find():
+            yield _Document.from_mongo(e, app_id).to_pb()
 
 
 
@@ -971,8 +954,10 @@ class MongoDatastore(object):
           string, cursor ID for given query.
         """
         coll_name = query.kind().lower()
-        if coll_name == '__kind__':
+        if coll_name in ('__kind__', '__namespace__'):
             cursor = _PseudoKindCursor(query, self._db, self.schema)
+        elif coll_name == '':
+            cursor = _StatCursor(query, self._db)
         else:
             cursor = _IteratorCursor(query, self._db)
 
