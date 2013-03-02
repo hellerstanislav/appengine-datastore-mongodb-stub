@@ -84,8 +84,5 @@ Notes
 =====
 * Tested only on ndb (google.appengine.ext.ndb).
 * Missing tests for threaded environment.
-* Missing transaction tests.
-* Namespaces not supported.
 * Query projection on multiple repeated properties not supported.
-* Datastore statistics in SDK devel console not supported yet.
 
