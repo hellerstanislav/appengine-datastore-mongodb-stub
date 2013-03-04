@@ -1,8 +1,8 @@
 diff --git a/appengine/tools/api_server.py b/appengine/tools/api_server.py
-index 7b1c23e..72de06c 100644
+index a2f4b48..4d7f19d 100644
 --- a/appengine/tools/api_server.py
 +++ b/appengine/tools/api_server.py
-@@ -66,6 +66,7 @@ from google.appengine.api.xmpp import xmpp_service_stub
+@@ -65,6 +65,7 @@ from google.appengine.api.xmpp import xmpp_service_stub
  from google.appengine.api import datastore_file_stub
  from google.appengine.datastore import datastore_sqlite_stub
  from google.appengine.datastore import datastore_stub_util
@@ -10,26 +10,26 @@ index 7b1c23e..72de06c 100644
  
  from google.appengine.api import apiproxy_stub_map
  from google.appengine.ext.remote_api import remote_api_pb
-@@ -235,6 +236,7 @@ def _SetupStubs(
+@@ -234,6 +235,7 @@ def _SetupStubs(
      trusted,
      blobstore_path,
      use_sqlite,
 +    use_mongodb,
+     auto_id_policy,
      high_replication,
      datastore_path,
-     datastore_require_indexes,
 @@ -263,6 +265,7 @@ def _SetupStubs(
          storage.
      use_sqlite: A bool indicating whether DatastoreSqliteStub or
          DatastoreFileStub should be used.
 +    use_mongodb: A bool indication whether DatastoreMongoDBStub should be used.
-     high_replication: A bool indicating whether to use the high replication
-         consistency model.
-     datastore_path: The path to the file that should be used for datastore
-@@ -345,6 +348,14 @@ def _SetupStubs(
-         datastore_require_indexes,
+     auto_id_policy: One of datastore_stub_util.SEQUENTIAL or .SCATTERED,
+         indicating whether the Datastore stub should assign IDs sequentially
+         or scattered.
+@@ -344,6 +347,14 @@ def _SetupStubs(
          trusted,
-         root_path=application_root)
+         root_path=application_root,
+         auto_id_policy=auto_id_policy)
 +  elif use_mongodb:
 +    daatstore = datastore_mongodb_stub.DatastoreMongoDBStub(
 +        app_id,
@@ -41,7 +41,7 @@ index 7b1c23e..72de06c 100644
    else:
      datastore = datastore_file_stub.DatastoreFileStub(
          app_id,
-@@ -483,6 +494,10 @@ def ParseCommandArguments(args):
+@@ -489,6 +500,10 @@ def ParseCommandArguments(args):
                        action=boolean_action.BooleanAction,
                        const=True,
                        default=False)
@@ -52,7 +52,7 @@ index 7b1c23e..72de06c 100644
    parser.add_argument('--high_replication',
                        action=boolean_action.BooleanAction,
                        const=True,
-@@ -573,7 +588,8 @@ class APIServerProcess(object):
+@@ -577,7 +592,8 @@ class APIServerProcess(object):
                 smtp_user=None,
                 task_retry_seconds=None,
                 trusted=None,
@@ -62,7 +62,7 @@ index 7b1c23e..72de06c 100644
      """Configures the APIs hosted by this server.
  
      Args:
-@@ -631,6 +647,7 @@ class APIServerProcess(object):
+@@ -636,6 +652,7 @@ class APIServerProcess(object):
        trusted: A bool indicating if privileged APIs should be made available.
        use_sqlite: A bool indicating whether DatastoreSqliteStub or
            DatastoreFileStub should be used.
@@ -70,76 +70,68 @@ index 7b1c23e..72de06c 100644
      """
      self._process = None
      self._host = host
-@@ -663,6 +680,7 @@ class APIServerProcess(object):
+@@ -669,6 +686,8 @@ class APIServerProcess(object):
      self._BindArgument('--task_retry_seconds', task_retry_seconds)
      self._BindArgument('--trusted', trusted)
      self._BindArgument('--use_sqlite', use_sqlite)
 +    self._BindArgument('--use_mongodb', use_mongodb)
++
  
    @property
    def url(self):
-@@ -779,6 +797,7 @@ def main():
+@@ -785,6 +804,7 @@ def main():
                blobstore_path=args.blobstore_path,
                datastore_path=args.datastore_path,
                use_sqlite=args.use_sqlite,
 +              use_mongodb=args.use_mongodb,
+               auto_id_policy=args.auto_id_policy,
                high_replication=args.high_replication,
                datastore_require_indexes=args.require_indexes,
-               images_host_prefix=application_address,
 diff --git a/appengine/tools/dev_appserver.py b/appengine/tools/dev_appserver.py
-index 199f791..77943a6 100644
+index 6267ba3..ca13c81 100644
 --- a/appengine/tools/dev_appserver.py
 +++ b/appengine/tools/dev_appserver.py
-@@ -131,6 +131,7 @@ from google.appengine.api.system import system_stub
+@@ -129,6 +129,7 @@ from google.appengine.api import rdbms_mysqldb
+ from google.appengine.api.system import system_stub
  from google.appengine.api.xmpp import xmpp_service_stub
  from google.appengine.datastore import datastore_sqlite_stub
- from google.appengine.datastore import datastore_stub_util
 +from google.appengine.datastore import datastore_mongodb_stub
+ from google.appengine.datastore import datastore_stub_util
  
  from google.appengine import dist
- 
-@@ -3446,6 +3447,7 @@ def SetupStubs(app_id, **config):
+@@ -3448,6 +3449,7 @@ def SetupStubs(app_id, **config):
      prospective_search_path: Path to the file to store Prospective Search stub
          data in.
      use_sqlite: Use the SQLite stub for the datastore.
 +    use_mongodb: Use the MongoDB stub for the datastore.
+     auto_id_policy: How datastore stub assigns IDs, sequential or scattered.
      high_replication: Use the high replication consistency model
      history_path: DEPRECATED, No-op.
-     clear_datastore: If the datastore should be cleared on startup.
-@@ -3488,6 +3490,7 @@ def SetupStubs(app_id, **config):
+@@ -3490,6 +3492,7 @@ def SetupStubs(app_id, **config):
    prospective_search_path = config.get('prospective_search_path', '')
    clear_prospective_search = config.get('clear_prospective_search', False)
    use_sqlite = config.get('use_sqlite', False)
 +  use_mongodb = config.get('use_mongodb', False)
+   auto_id_policy = config.get('auto_id_policy', datastore_stub_util.SEQUENTIAL)
    high_replication = config.get('high_replication', False)
    require_indexes = config.get('require_indexes', False)
-   mysql_host = config.get('mysql_host', None)
-@@ -3567,6 +3570,11 @@ def SetupStubs(app_id, **config):
-             app_id, datastore_path, require_indexes=require_indexes,
-             trusted=trusted, root_path=root_path,
-             use_atexit=_use_atexit_for_datastore_stub)
+@@ -3574,6 +3577,11 @@ def SetupStubs(app_id, **config):
+           trusted=trusted, root_path=root_path,
+           use_atexit=_use_atexit_for_datastore_stub,
+           auto_id_policy=auto_id_policy)
 +    elif use_mongodb:
 +      datastore = datastore_mongodb_stub.DatastoreMongoDBStub(
-+            app_id, require_indexes=require_indexes,
-+            service_name='datastore_v3', root_path=root_path,
-+            mongodb_host='localhost', mongodb_port=27017)
++          app_id, require_indexes=require_indexes,
++          service_name='datastore_v3', root_path=root_path,
++          mongodb_host='localhost', mongodb_port=27017)
      else:
        logging.warning(FILE_STUB_DEPRECATION_MESSAGE)
        datastore = datastore_file_stub.DatastoreFileStub(
-@@ -3868,7 +3876,7 @@ def PortAllEntities(datastore_path):
-     apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
- 
-     entities = FetchAllEntitites()
--    sqlite_datastore_stub = datastore_sqlite_stub.DatastoreSqliteStub(app_id,
-+    sqlite_datastore_stub = datastore_sqlite_stub.iteStub(app_id,
-                             datastore_path + '.sqlite', trusted=True)
-     apiproxy_stub_map.apiproxy.ReplaceStub('datastore_v3',
-                                            sqlite_datastore_stub)
 diff --git a/appengine/tools/dev_appserver_main.py b/appengine/tools/dev_appserver_main.py
-index 13a6ae9..79ce7db 100644
+index 662eda2..2d97662 100644
 --- a/appengine/tools/dev_appserver_main.py
 +++ b/appengine/tools/dev_appserver_main.py
-@@ -108,6 +108,8 @@ Options:
+@@ -115,6 +115,8 @@ Options:
                               (Default '%(task_retry_seconds)s')
    --use_sqlite               Use the new, SQLite based datastore stub.
                               (Default false)
@@ -148,7 +140,7 @@ index 13a6ae9..79ce7db 100644
    --port_sqlite_data         Converts the data from the file based datastore
                               stub to the new SQLite stub, one time use only.
                               (Default false)
-@@ -223,6 +225,7 @@ ARG_TASK_RETRY_SECONDS = 'task_retry_seconds'
+@@ -231,6 +233,7 @@ ARG_TASK_RETRY_SECONDS = 'task_retry_seconds'
  
  ARG_TRUSTED = 'trusted'
  ARG_USE_SQLITE = 'use_sqlite'
@@ -156,7 +148,7 @@ index 13a6ae9..79ce7db 100644
  ARG_PORT_SQLITE_DATA = 'port_sqlite_data'
  ARG_CONSOLE = 'console'
  
-@@ -336,6 +339,7 @@ LONG_OPTIONS = [
+@@ -347,6 +350,7 @@ LONG_OPTIONS = [
      'task_retry_seconds=',
      'trusted',
      'use_sqlite',
@@ -164,13 +156,13 @@ index 13a6ae9..79ce7db 100644
      'port_sqlite_data',
      'enable_console',
      'disable_console',
-@@ -417,6 +421,9 @@ def ParseArguments(argv):
-     if option == '--use_sqlite':
-       option_dict[ARG_USE_SQLITE] = True
+@@ -430,6 +434,9 @@ def ParseArguments(argv):
+     if option == '--auto_id_policy':
+       option_dict[ARG_AUTO_ID_POLICY] = value.lower()
  
 +    if option == '--use_mongodb':
 +      option_dict[ARG_USE_MONGODB] = True
 +
-     if option == '--port_sqlite_data':
-       option_dict[ARG_PORT_SQLITE_DATA] = True
+     if option == '--use_sqlite':
+       option_dict[ARG_USE_SQLITE] = True
  
