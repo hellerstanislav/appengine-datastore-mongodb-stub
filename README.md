@@ -7,7 +7,7 @@ Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 [Mongo Appengine Connector](https://github.com/mdirolf/mongo-appengine-connector) (thx).
 
 **Features:**
-* compatibility with SDK 1.7.4 
+* compatibility with SDK 1.7.5
 * supported features of ndb like structured properties, query projection etc.
 * optimized for highest performance (safe=False for pymongo < 2.4, write concern w=0 for pymongo >= 2.4).
 * tested againts behaviour of DatastoreFileStub.
