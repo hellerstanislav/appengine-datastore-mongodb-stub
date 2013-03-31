@@ -557,6 +557,11 @@ class _IteratorCursor(_BaseCursor):
     def limit(self, l):
         """Apply limit to this cursor."""
         assert l >= 0
+        if isinstance(l, long):
+            if l < sys.maxint:
+                l = int(l)
+            else:
+                l = sys.maxint
         self.__limit = l
         self.__cursor.limit(l)
         return self
@@ -1031,7 +1036,7 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
                 self._BaseIndexManager__indexes[index.app_id()].append(index)
 
 
-    def MakeSyncCall(self, service, call, request, response):
+    def MakeSyncCall(self, service, call, request, response, request_id=None):
         """
         Base input RPC method.
 
@@ -1047,7 +1052,8 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         super(DatastoreMongoDBStub, self).MakeSyncCall(service,
                                                        call,
                                                        request,
-                                                       response)
+                                                       response,
+                                                       request_id)
         explanation = []
         assert response.IsInitialized(explanation), explanation
 

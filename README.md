@@ -7,7 +7,8 @@ Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 [Mongo Appengine Connector](https://github.com/mdirolf/mongo-appengine-connector) (thx).
 
 **Features:**
-* compatibility with SDK 1.7.5
+* compatibility with SDK 1.7.6
+* support for **devappserver2**
 * supported features of ndb like structured properties, query projection etc.
 * optimized for highest performance (safe=False for pymongo < 2.4, write concern w=0 for pymongo >= 2.4).
 * tested againts behaviour of DatastoreFileStub.
@@ -21,7 +22,10 @@ Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 Install
 =======
 This way you can install the stub directly into your SDK. Warning: some of the files of the SDK
-will be overwriten (patched).
+will be overwriten (patched). Since SDK 1.7.6 introduces devappserver2, which supports DatastoreSqliteStub
+only, there's no --use_sqlite option in dev_appserver. Patching will overwrite hard-wired sqlite
+stub into mongodb stub. (For more info, see patch file).
+
 
 1. Extract downloaded zip archive (or clone this repo). Enter the appengine-datastore-mongodb-stub dir.
 ```bash
@@ -36,10 +40,10 @@ $ sh install.sh /PATH/TO/YOUR/APPENGINE/SDK
 
 Usage
 =====
-You may start your dev_appserver now with new `--use_mongodb` option. This way your data will be stored in
-mongodb databse named after your app ID. For example:
+You may start your dev_appserver now. This way your data will be stored in mongodb databse named
+after your app ID. For example:
 ```bash
-$ python ./google_appengine/dev_appserver.py --use_mongodb $PROJECT_DIR
+$ python ./google_appengine/dev_appserver.py $PROJECT_DIR
 ```
 
 
