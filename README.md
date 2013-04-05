@@ -7,11 +7,13 @@ Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 [Mongo Appengine Connector](https://github.com/mdirolf/mongo-appengine-connector) (thx).
 
 **Features:**
+* provides much faster queries than DatastoreFileStub (10-100 times faster filtering, 5x faster ordering, depends on dataset size)
+* provides much faster inserts than DatastoreSqliteStub (2-3 times faster on large datasets)
 * compatibility with SDK 1.7.6
 * support for **devappserver2**
 * supported features of ndb like structured properties, query projection etc.
 * optimized for highest performance (safe=False for pymongo < 2.4, write concern w=0 for pymongo >= 2.4).
-* tested againts behaviour of DatastoreFileStub.
+* tested against behaviour of DatastoreFileStub.
 
 **Dependencies:**
 * python 2.7 (tested on 2.7.3 [GCC 4.7.0 20120507 (Red Hat 4.7.0-5)])
