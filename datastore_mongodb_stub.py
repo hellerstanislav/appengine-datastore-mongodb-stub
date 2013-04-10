@@ -120,10 +120,13 @@ class _Key(object):
     def to_mongo_key(self):
         """Convert this key into mongodb format.
 
-        Mongodb format is basically path connected with `-`, eg. Product-1-Image-4.
+        Mongodb format is dict, which contains key 'dskey' mapping to list
+        containing parent path. The last element is key of the entity.
+
+        Example: {'dskey': ['Product-1', 'Image-4', ...]}
 
         Returns:
-          Converted key as string.
+          Converted key as dict.
         """
         return {'dskey': self._mongo_key}
 
