@@ -25,8 +25,8 @@ fi
 # check version
 SDK_VER=`grep release $1/VERSION | cut -d\" -f2`
 echo "SDK version $SDK_VER"
-if [[ "$SDK_VER" != "1.7.6" ]]; then
-    echo "Wrong version of SDK. Expected 1.7.6. Sorry."
+if [[ "$SDK_VER" != "1.7.7" ]]; then
+    echo "Wrong version of SDK. Expected 1.7.7. Sorry."
     exit 1
 fi
 
