@@ -21,8 +21,8 @@ Slightly inspired by Mike Dirolf's and Tobias Rodabel's
 * mongodb >= 2.0
 
 
-Install
-=======
+Install (Linux)
+===============
 This way you can install the stub directly into your SDK. Warning: some of the files of the SDK
 will be overwriten (patched). Since SDK 1.7.6 introduces devappserver2, which supports DatastoreSqliteStub
 only, there's no --use_sqlite option in dev_appserver. Patching will overwrite hard-wired sqlite
@@ -39,6 +39,26 @@ $ cd appengine-datastore-mongodb-stub
 ```bash
 $ sh install.sh /PATH/TO/YOUR/APPENGINE/SDK
 ```
+
+
+Install (Windows)
+=================
+For installation on Windows you will have to
+
+1. Install `patch` utility (http://gnuwin32.sourceforge.net/packages/patch.htm)
+2. Run -> cmd (win command line)
+3. Add `patch` to windows `PATH`, most commonly the path to patch is `"C:\Program Files\GnuWin32\bin\"`, so:
+```dos
+> PATH=%PATH%;"C:\Program Files\GnuWin32\bin\"
+```
+
+4. Cd to appengine-datastore-mongodb-stub directory. Run install.bat with first param as path to google_appengine SDK, most commonly
+`"C:\Program Files\Google\google_appengine\"`.
+```dos
+> install.bat "C:\Program Files\Google\google_appengine\"
+```
+
+
 
 Usage
 =====
