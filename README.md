@@ -42,12 +42,21 @@ $ sh install.sh /PATH/TO/YOUR/APPENGINE/SDK
 
 Usage
 =====
+**devappserver2:**
+
 You may start your dev_appserver now. This way your data will be stored in mongodb databse named
 after your app ID. For example:
 ```bash
 $ python ./google_appengine/dev_appserver.py $PROJECT_DIR
 ```
 
+**old_dev_appserver:**
+
+If you are still using an old development server, you may start it now. Using `--use_mongodb` flag
+your data will be stored in mongodb databse named after your app ID. For example:
+```bash
+$ python ./google_appengine/old_dev_appserver.py --use_mongodb $PROJECT_DIR
+```
 
 Usage in tests
 ==============
