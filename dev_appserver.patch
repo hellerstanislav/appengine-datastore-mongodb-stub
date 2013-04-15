@@ -1,8 +1,8 @@
 diff --git a/appengine/tools/api_server.py b/appengine/tools/api_server.py
-index a2f4b48..4d7f19d 100644
+index e7ede28..175dd07 100644
 --- a/appengine/tools/api_server.py
 +++ b/appengine/tools/api_server.py
-@@ -65,6 +65,7 @@ from google.appengine.api.xmpp import xmpp_service_stub
+@@ -67,6 +67,7 @@ from google.appengine.api.xmpp import xmpp_service_stub
  from google.appengine.api import datastore_file_stub
  from google.appengine.datastore import datastore_sqlite_stub
  from google.appengine.datastore import datastore_stub_util
@@ -10,7 +10,7 @@ index a2f4b48..4d7f19d 100644
  
  from google.appengine.api import apiproxy_stub_map
  from google.appengine.ext.remote_api import remote_api_pb
-@@ -234,6 +235,7 @@ def _SetupStubs(
+@@ -236,6 +237,7 @@ def _SetupStubs(
      trusted,
      blobstore_path,
      use_sqlite,
@@ -18,7 +18,7 @@ index a2f4b48..4d7f19d 100644
      auto_id_policy,
      high_replication,
      datastore_path,
-@@ -263,6 +265,7 @@ def _SetupStubs(
+@@ -265,6 +267,7 @@ def _SetupStubs(
          storage.
      use_sqlite: A bool indicating whether DatastoreSqliteStub or
          DatastoreFileStub should be used.
@@ -26,7 +26,7 @@ index a2f4b48..4d7f19d 100644
      auto_id_policy: One of datastore_stub_util.SEQUENTIAL or .SCATTERED,
          indicating whether the Datastore stub should assign IDs sequentially
          or scattered.
-@@ -344,6 +347,14 @@ def _SetupStubs(
+@@ -346,6 +349,14 @@ def _SetupStubs(
          trusted,
          root_path=application_root,
          auto_id_policy=auto_id_policy)
@@ -41,7 +41,7 @@ index a2f4b48..4d7f19d 100644
    else:
      datastore = datastore_file_stub.DatastoreFileStub(
          app_id,
-@@ -489,6 +500,10 @@ def ParseCommandArguments(args):
+@@ -491,6 +502,10 @@ def ParseCommandArguments(args):
                        action=boolean_action.BooleanAction,
                        const=True,
                        default=False)
@@ -52,7 +52,7 @@ index a2f4b48..4d7f19d 100644
    parser.add_argument('--high_replication',
                        action=boolean_action.BooleanAction,
                        const=True,
-@@ -577,7 +592,8 @@ class APIServerProcess(object):
+@@ -579,7 +594,8 @@ class APIServerProcess(object):
                 smtp_user=None,
                 task_retry_seconds=None,
                 trusted=None,
@@ -62,7 +62,7 @@ index a2f4b48..4d7f19d 100644
      """Configures the APIs hosted by this server.
  
      Args:
-@@ -636,6 +652,7 @@ class APIServerProcess(object):
+@@ -638,6 +654,7 @@ class APIServerProcess(object):
        trusted: A bool indicating if privileged APIs should be made available.
        use_sqlite: A bool indicating whether DatastoreSqliteStub or
            DatastoreFileStub should be used.
@@ -70,7 +70,7 @@ index a2f4b48..4d7f19d 100644
      """
      self._process = None
      self._host = host
-@@ -669,6 +686,8 @@ class APIServerProcess(object):
+@@ -671,6 +688,8 @@ class APIServerProcess(object):
      self._BindArgument('--task_retry_seconds', task_retry_seconds)
      self._BindArgument('--trusted', trusted)
      self._BindArgument('--use_sqlite', use_sqlite)
@@ -79,7 +79,7 @@ index a2f4b48..4d7f19d 100644
  
    @property
    def url(self):
-@@ -785,6 +804,7 @@ def main():
+@@ -843,6 +862,7 @@ def main():
                blobstore_path=args.blobstore_path,
                datastore_path=args.datastore_path,
                use_sqlite=args.use_sqlite,
@@ -88,10 +88,10 @@ index a2f4b48..4d7f19d 100644
                high_replication=args.high_replication,
                datastore_require_indexes=args.require_indexes,
 diff --git a/appengine/tools/dev_appserver.py b/appengine/tools/dev_appserver.py
-index 6267ba3..ca13c81 100644
+index 763ce99..81c8e0f 100644
 --- a/appengine/tools/dev_appserver.py
 +++ b/appengine/tools/dev_appserver.py
-@@ -129,6 +129,7 @@ from google.appengine.api import rdbms_mysqldb
+@@ -130,6 +130,7 @@ from google.appengine.api import rdbms_mysqldb
  from google.appengine.api.system import system_stub
  from google.appengine.api.xmpp import xmpp_service_stub
  from google.appengine.datastore import datastore_sqlite_stub
@@ -99,7 +99,7 @@ index 6267ba3..ca13c81 100644
  from google.appengine.datastore import datastore_stub_util
  
  from google.appengine import dist
-@@ -3448,6 +3449,7 @@ def SetupStubs(app_id, **config):
+@@ -3449,6 +3450,7 @@ def SetupStubs(app_id, **config):
      prospective_search_path: Path to the file to store Prospective Search stub
          data in.
      use_sqlite: Use the SQLite stub for the datastore.
@@ -107,7 +107,7 @@ index 6267ba3..ca13c81 100644
      auto_id_policy: How datastore stub assigns IDs, sequential or scattered.
      high_replication: Use the high replication consistency model
      history_path: DEPRECATED, No-op.
-@@ -3490,6 +3492,7 @@ def SetupStubs(app_id, **config):
+@@ -3491,6 +3493,7 @@ def SetupStubs(app_id, **config):
    prospective_search_path = config.get('prospective_search_path', '')
    clear_prospective_search = config.get('clear_prospective_search', False)
    use_sqlite = config.get('use_sqlite', False)
@@ -115,7 +115,7 @@ index 6267ba3..ca13c81 100644
    auto_id_policy = config.get('auto_id_policy', datastore_stub_util.SEQUENTIAL)
    high_replication = config.get('high_replication', False)
    require_indexes = config.get('require_indexes', False)
-@@ -3574,6 +3577,11 @@ def SetupStubs(app_id, **config):
+@@ -3575,6 +3578,11 @@ def SetupStubs(app_id, **config):
            trusted=trusted, root_path=root_path,
            use_atexit=_use_atexit_for_datastore_stub,
            auto_id_policy=auto_id_policy)
@@ -128,7 +128,7 @@ index 6267ba3..ca13c81 100644
        logging.warning(FILE_STUB_DEPRECATION_MESSAGE)
        datastore = datastore_file_stub.DatastoreFileStub(
 diff --git a/appengine/tools/dev_appserver_main.py b/appengine/tools/dev_appserver_main.py
-index 662eda2..2d97662 100644
+index 7f6667c..c14d57b 100644
 --- a/appengine/tools/dev_appserver_main.py
 +++ b/appengine/tools/dev_appserver_main.py
 @@ -115,6 +115,8 @@ Options:
@@ -165,9 +165,9 @@ index 662eda2..2d97662 100644
 +
      if option == '--use_sqlite':
        option_dict[ARG_USE_SQLITE] = True
-
+ 
 diff --git a/appengine/tools/devappserver2/api_server.py b/appengine/tools/devappserver2/api_server.py
-index 5ccf415..76b411e 100644
+index 3480b36..7e5c5e8 100644
 --- a/appengine/tools/devappserver2/api_server.py
 +++ b/appengine/tools/devappserver2/api_server.py
 @@ -58,6 +58,7 @@ from google.appengine.api.system import system_stub
@@ -175,13 +175,13 @@ index 5ccf415..76b411e 100644
  from google.appengine.datastore import datastore_sqlite_stub
  from google.appengine.datastore import datastore_stub_util
 +from google.appengine.datastore import datastore_mongodb_stub
-
+ 
  from google.appengine.api import apiproxy_stub_map
  from google.appengine.api import datastore
 @@ -304,13 +305,10 @@ def setup_stubs(
        'channel',
        channel_service_stub.ChannelServiceStub(request_data=request_data))
-
+ 
 -  datastore_stub = datastore_sqlite_stub.DatastoreSqliteStub(
 +  datastore_stub = datastore_mongodb_stub.DatastoreMongoDBStub(
        app_id,
@@ -192,6 +192,6 @@ index 5ccf415..76b411e 100644
 -      auto_id_policy=datastore_auto_id_policy)
 +      require_indexes=datastore_require_indexes,
 +      root_path=application_root)
-
+ 
    datastore_stub.SetConsistencyPolicy(datastore_consistency)
  
