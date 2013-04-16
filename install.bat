@@ -14,7 +14,7 @@ copy %STUBFILE% %DATASTORE_PATH%
 copy %PATCHFILE% %SDK_GOOGLE%
 cd %SDK_GOOGLE%
 echo "Patching dev_appserver..."
-patch -p1 < %PATCHFILE%
+patch --binary -p1 < %PATCHFILE%
 del %PATCHFILE%
 echo "Done."
 GOTO END
