@@ -88,7 +88,7 @@ index e7ede28..175dd07 100644
                high_replication=args.high_replication,
                datastore_require_indexes=args.require_indexes,
 diff --git a/appengine/tools/dev_appserver.py b/appengine/tools/dev_appserver.py
-index 763ce99..81c8e0f 100644
+index 763ce99..4375efc 100644
 --- a/appengine/tools/dev_appserver.py
 +++ b/appengine/tools/dev_appserver.py
 @@ -130,6 +130,7 @@ from google.appengine.api import rdbms_mysqldb
@@ -115,7 +115,22 @@ index 763ce99..81c8e0f 100644
    auto_id_policy = config.get('auto_id_policy', datastore_stub_util.SEQUENTIAL)
    high_replication = config.get('high_replication', False)
    require_indexes = config.get('require_indexes', False)
-@@ -3575,6 +3578,11 @@ def SetupStubs(app_id, **config):
+@@ -3532,7 +3535,13 @@ def SetupStubs(app_id, **config):
+     _RemoveFile(prospective_search_path)
+ 
+   if clear_datastore:
+-    _RemoveFile(datastore_path)
++    if use_mongodb:
++        ds = datastore_mongodb_stub.MongoDatastore(host='localhost',
++                                                   port=27017,
++                                                   app_id=app_id)
++        ds.clear()
++    else:
++        _RemoveFile(datastore_path)
+ 
+   if clear_search_index:
+     _RemoveFile(search_index_path)
+@@ -3575,6 +3584,11 @@ def SetupStubs(app_id, **config):
            trusted=trusted, root_path=root_path,
            use_atexit=_use_atexit_for_datastore_stub,
            auto_id_policy=auto_id_policy)
@@ -195,3 +210,25 @@ index 3480b36..7e5c5e8 100644
  
    datastore_stub.SetConsistencyPolicy(datastore_consistency)
  
+diff --git a/appengine/tools/devappserver2/devappserver2.py b/appengine/tools/devappserver2/devappserver2.py
+index 57f6b97..bae42c9 100644
+--- a/appengine/tools/devappserver2/devappserver2.py
++++ b/appengine/tools/devappserver2/devappserver2.py
+@@ -28,6 +28,7 @@ import tempfile
+ import time
+ 
+ from google.appengine.datastore import datastore_stub_util
++from google.appengine.datastore.datastore_mongodb_stub import MongoDatastore
+ from google.appengine.tools import boolean_action
+ from google.appengine.tools.devappserver2.admin import admin_server
+ from google.appengine.tools.devappserver2 import api_server
+@@ -559,7 +560,8 @@ class DevelopmentServer(object):
+                                                             'blobs')
+ 
+     if options.clear_datastore:
+-      _clear_datastore_storage(datastore_path)
++      ds = MongoDatastore(host='localhost', port=27017, app_id=configuration.app_id)
++      ds.clear()
+ 
+     if options.clear_prospective_search:
+       _clear_prospective_search_storage(prospective_search_path)
