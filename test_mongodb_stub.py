@@ -463,6 +463,8 @@ class _DatastoreStubTests(object):
             l = [Q(a=i) for i in xrange(count/2)]
             l.extend( [Q(a=str(i)) for i in xrange(count/2)] )
             return Q, l
+        elif property_type is ndb.BlobKeyProperty:
+            return Q, [Q(a=BlobKey('SomeBlobKey-%s' % i)) for i in xrange(count)]
 
     # QUERY FILTERS
 
@@ -582,6 +584,32 @@ class _DatastoreStubTests(object):
         try:
             self.assertEqual(len(l), 40)
             self.assertEqual(l, e[21:61])
+        finally:
+            ndb.delete_multi(keys)
+
+
+    def test_query_filter_multiple_and(self):
+        class Q(ndb.Model):
+            a = ndb.StringProperty()
+            b = ndb.IntegerProperty()
+            c = ndb.IntegerProperty()
+        e = []
+        for l in ('a','b','c'):
+            for i in xrange(3):
+                for j in xrange(3):
+                    e.append(Q(a=l, b=i, c=j))
+        keys = ndb.put_multi(e)
+        l = Q.query(Q.a == 'a', Q.b == 0, Q.c < 2).order(Q.c).fetch()
+        try:
+            self.assertEqual(len(l), 2)
+            self.assertEqual(l, e[:2])
+        except AssertionError:
+            ndb.delete_multi(keys)
+            raise
+        try:
+            l = Q.query(Q.b == 1, Q.b < 2, Q.b > 0).order(Q.b, Q.a, Q.c).fetch()
+            self.assertEqual(len(l), 9)
+            self.assertEqual(l, filter(lambda x: x.b==1, e))
         finally:
             ndb.delete_multi(keys)
 
@@ -950,6 +978,16 @@ class _DatastoreStubTests(object):
             ndb.delete_multi(keys)
 
 
+    def test_order_blobkey_property(self):
+        Q, e = self._gen_entities(4, ndb.BlobKeyProperty)
+        keys = ndb.put_multi(e)
+        l = Q.query().order(Q.a).fetch()
+        try:
+            self.assertEqual(l, e)
+        finally:
+            ndb.delete_multi(keys)
+
+
     def test_query_order_unorderable_property(self):
         Q, e = self._gen_entities(4, ndb.TextProperty)
         keys = ndb.put_multi(e)
@@ -990,7 +1028,6 @@ class _DatastoreStubTests(object):
             self.assertEqual(l, [])
         finally:
             ndb.delete_multi(keys)
-        # TODO: what more is unorderable? GenericProperty?
 
 
     def test_query_order_unorderable_repeated_property(self):

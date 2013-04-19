@@ -498,6 +498,8 @@ class _IteratorCursor(_BaseCursor):
                 v1 = filters[prop]
                 del filters[prop]
                 filters["$and"] = [{prop:v1}, {prop:val}]
+            elif '$and' in filters:
+                filters['$and'].append({prop: val})
             else:
                 filters[prop] = val
         return filters
@@ -536,14 +538,16 @@ class _IteratorCursor(_BaseCursor):
             # if the attribute does not exist in the entity, datastore omits it,
             # but mognodb returns it..
             if key in self._filters:
-                self._filters[key]["$exists"] = True
+                try:
+                    self._filters[key]["$exists"] = True
+                except TypeError:
+                    pass
             else:
                 self._filters[key] = {"$exists" : True}
 
             # ensure that there are not returned results with unorderable
             # property types
             type_for_key = "%s.t" % key
-            # FIXME: add more unorderable property types!
             self._filters[type_for_key] = {"$nin" : ["blob", "text", "local"]}
         return ordering
 
