@@ -949,7 +949,7 @@ class MongoDatastore(object):
         coll.remove({'_id.dskey': {'$all': k._mongo_key}})
 
     def clear(self):
-        """Clear the whole datastore."""
+        """Clear the whole mongo datastore."""
         self._conn.drop_database(self._app_id)
 
     def query(self, query):
@@ -1060,9 +1060,9 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         explanation = []
         assert response.IsInitialized(explanation), explanation
 
-
     def Clear(self):
-        """Clears the whole datastore."""
+        """Clears out all stored values."""
+        datastore_stub_util.DatastoreStub.Clear(self)
         self._mongods.clear()
         self.__entities_by_group = collections.defaultdict(dict)
 
@@ -1072,25 +1072,60 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
     def Close(self):
         """Noop"""
 
-    def _GetEntityLocaltion(self, key):
+    def _GetEntityLocation(self, key):
+        """Get keys to self.__entities_by_group from the given key.
+
+        Copied from datastore_file_stub.
+
+        Args:
+          key: entity_pb.Reference
+
+        Returns:
+          Tuple (by_entity_group key, entity key)
+        """
         entity_group = datastore_stub_util._GetEntityGroup(key)
         eg_k = datastore_types.ReferenceToKeyValue(entity_group)
         k = datastore_types.ReferenceToKeyValue(key)
         return (eg_k, k)
 
     def _Put(self, entity, insert):
+        """Put the given entity.
+
+        Args:
+          entity: The entity_pb.EntityProto to put.
+          insert: A boolean that indicates if we should fail if the entity already
+            exists.
+        """
         entity = datastore_stub_util.StoreEntity(entity)
         # store entity into entity group dict
-        eg_k, k = self._GetEntityLocaltion(entity.key())
+        eg_k, k = self._GetEntityLocation(entity.key())
         self.__entities_by_group[eg_k][k] = entity
         # put into mongo 
         self._mongods.put([entity])
 
     def _Get(self, key):
+        """Get the entity for the given reference or None.
+
+        Args:
+          reference: A entity_pb.Reference to loop up.
+
+        Returns:
+          The entity_pb.EntityProto associated with the given reference or None.
+        """
         entity = self._mongods.get(key)
         return datastore_stub_util.LoadEntity(entity)
 
     def _AllocateIds(self, reference, size=1, max_id=None):
+        """Allocate ids for given reference.
+
+        Args:
+          reference: A entity_pb.Reference to allocate an id for.
+          size: The size of the range to allocate
+          max_id: The upper bound of the range to allocate
+
+        Returns:
+          A tuple containing (min, max) of the allocated range.
+        """
         datastore_stub_util.CheckAppId(reference.app(),
                                        self._trusted, self._app_id)
         datastore_stub_util.Check(not (size and max_id),
@@ -1100,7 +1135,12 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         return (t, t+size)
 
     def _Delete(self, key):
-        eg_k, k = self._GetEntityLocaltion(key)
+        """Delete the entity associated with the specified reference.
+
+        Args:
+          reference: The entity_pb.Reference of the entity to delete.
+        """
+        eg_k, k = self._GetEntityLocation(key)
         try:
             del self.__entities_by_group[eg_k][k]
             if not self.__entities_by_group[eg_k]:
@@ -1110,6 +1150,16 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
         self._mongods.delete(key)
 
     def _GetEntitiesInEntityGroup(self, entity_group):
+        """Gets the contents of a specific entity group.
+
+        Other entity groups may be modified concurrently.
+
+        Args:
+          entity_group: A entity_pb.Reference of the entity group to get.
+
+        Returns:
+          A dict mapping datastore_types.ReferenceToKeyValue(key) to EntityProto
+        """
         try:
             eg_k = datastore_types.ReferenceToKeyValue(entity_group)
             return self.__entities_by_group[eg_k].copy()
@@ -1127,13 +1177,16 @@ class DatastoreMongoDBStub(datastore_stub_util.BaseDatastore,
                      for entity in cursor)
 
     def _GetQueryCursor(self, query, filters, orders, index_list):
-        """Returns a query cursor for the provided query.
+        """Runs the given datastore_pb.Query and returns a QueryCursor for it.
 
         Args:
-          conn: The SQLite connection.
-          query: A datastore_pb.Query protobuf.
+          query: The datastore_pb.Query to run.
+          filters: A list of filters that override the ones found on query.
+          orders: A list of orders that override the ones found on query.
+          index_list: A list of indexes used by the query.
+
         Returns:
-          A QueryCursor object.
+          An IteratorCursor that can be used to fetch query results.
         """
         db_cursor = self._mongods.query(query)
         orders = datastore_stub_util._GuessOrders(filters, orders)
