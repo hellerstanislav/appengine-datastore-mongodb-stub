@@ -547,6 +547,12 @@ class _DatastoreStubTests(object):
         ref = [e[0], e[2]]
         try:
             self.assertEqual(l, ref)
+        except AssertionError:
+            ndb.delete_multi(keys)
+            raise
+        ll = Q.query(Q.a.IN(['a', 'z', 't'])).fetch()
+        try:
+            self.assertEqual(ll, e)
         finally:
             ndb.delete_multi(keys)
 
