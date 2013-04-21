@@ -80,6 +80,31 @@ $ python ./google_appengine/old_dev_appserver.py --use_mongodb $PROJECT_DIR
 
 Usage in tests
 ==============
+Since SDK 1.7.7, you can use patched testbed - there is new option `use_mongodb` in
+`Testbed.init_datastore_v3_stub`.
+```python
+import unittest
+
+from google.appengine.ext import testbed
+
+class MyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.testbed = testbed.Testbed()
+        cls.testbed.activate()
+        cls.testbed.init_datastore_v3_stub(use_mongodb=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.testbed.deactivate()
+
+    # ...a bunch of tests...
+```
+You can use `setUp` and `tearDown` methods as well, but be aware that when initializing
+the mongodb stub it creates new Connection. Setting the connection before every test could
+be a bit slow.
+
+Or you can fully customize the initialization using low-level API:
 ```python
 import unittest
 import os
@@ -113,7 +138,6 @@ class MyTests(unittest.TestCase):
         apiproxy_stub_map.apiproxy.RegisterStub('datastore_v3', datastore_stub)
 ```
 
-Maybe someday here will be patch for testbed if needed.
 
 Notes
 =====
