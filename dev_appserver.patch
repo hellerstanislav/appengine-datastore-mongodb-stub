@@ -232,3 +232,56 @@ index 57f6b97..bae42c9 100644
  
      if options.clear_prospective_search:
        _clear_prospective_search_storage(prospective_search_path)
+
+diff --git a/appengine/ext/testbed/__init__.py b/appengine/ext/testbed/__init__.py
+index 2db57d7..d9ca8fe 100644
+--- a/appengine/ext/testbed/__init__.py
++++ b/appengine/ext/testbed/__init__.py
+@@ -136,6 +136,7 @@ try:
+   from google.appengine.datastore import datastore_sqlite_stub
+ except ImportError:
+   datastore_sqlite_stub = None
++from google.appengine.datastore import datastore_mongodb_stub
+ from google.appengine.datastore import datastore_stub_util
+ 
+ 
+@@ -436,7 +437,7 @@ class Testbed(object):
+     self._register_stub(CHANNEL_SERVICE_NAME, stub)
+ 
+   def init_datastore_v3_stub(self, enable=True, datastore_file=None,
+-                             use_sqlite=False,
++                             use_sqlite=False, use_mongodb=False,
+                              auto_id_policy=AUTO_ID_POLICY_SEQUENTIAL,
+                              **stub_kw_args):
+     """Enable the datastore stub.
+@@ -457,7 +458,9 @@ class Testbed(object):
+       enable: True if the fake service should be enabled, False if real
+         service should be disabled.
+       datastore_file: Filename of a dev_appserver datastore file.
+-      use_sqlite: True to use the Sqlite stub, False (default) for file stub.
++      use_sqlite: True to use the Sqlite stub, False (default) for other stub.
++        If not use_sqlite and not use_mongodb, then file stub is used.
++      use_mongodb: True to use the MongoDB stub, False (default) for other stub.
+       auto_id_policy: How datastore stub assigns auto IDs. Either
+         AUTO_ID_POLICY_SEQUENTIAL or AUTO_ID_POLICY_SCATTERED.
+       stub_kw_args: Keyword arguments passed on to the service stub.
+@@ -466,6 +469,8 @@ class Testbed(object):
+       self._disable_stub(DATASTORE_SERVICE_NAME)
+       return
+     if use_sqlite:
++      if use_mongodb:
++        raise ValueError('Cannot use both use_sqlite and use_mongodb flags.')
+       if datastore_sqlite_stub is None:
+         raise StubNotSupportedError(
+             'The sqlite stub is not supported in production.')
+@@ -475,6 +480,10 @@ class Testbed(object):
+           use_atexit=False,
+           auto_id_policy=auto_id_policy,
+           **stub_kw_args)
++    elif use_mongodb:
++      stub = datastore_mongodb_stub.DatastoreMongoDBStub(
++          os.environ['APPLICATION_ID'],
++          **stub_kw_args)
+     else:
+       stub_kw_args.setdefault('save_changes', False)
+       stub = datastore_file_stub.DatastoreFileStub(
