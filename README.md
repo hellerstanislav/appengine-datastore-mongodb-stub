@@ -43,22 +43,60 @@ $ sh install.sh /PATH/TO/YOUR/APPENGINE/SDK
 
 Install (Windows)
 =================
-For installation on Windows you will have to
+For installation on Windows you will the `patch` utility. Make sure you have MongoDB running and pymongo installed.
 
-1. Install `patch` utility (http://gnuwin32.sourceforge.net/packages/patch.htm)
-2. Run -> cmd (win command line)
-3. Add `patch` to windows `PATH`, most commonly the path to patch is `"C:\Program Files\GnuWin32\bin\"`, so:
+1. Install `patch` utility (http://gnuwin32.sourceforge.net/packages/patch.htm), preferably version 2.5.9.7.
+2. Run `cmd` (win command line)
+  * Windows < Vista: run as usually
+  * **Windows Vista,7,8**: Start -> type `cmd` and `Ctrl+Shift+Enter` to run everything as Administrator
+3. Add `patch` to windows `PATH`, most commonly the path to patch is `"C:\Program Files\GnuWin32\bin\"`.
+   If you are running on 64bit OS, the path is expected to be `"C:\Program Files (x86)\GnuWin32\bin\"`:
 ```dos
-> PATH=%PATH%;"C:\Program Files\GnuWin32\bin\"
+> PATH=%PATH%;"C:\Program Files (x86)\GnuWin32\bin\"
 ```
 
-4. Cd to appengine-datastore-mongodb-stub directory. Run install.bat with first param as path to google_appengine SDK, most commonly
-`"C:\Program Files\Google\google_appengine\"`.
+4. Download this repository as zip archive (or clone this repo). Extract it and enter the appengine-datastore-mongodb-stub
+   directory.
+5. Run install.bat with first param as path to google_appengine SDK, most commonly
+`"C:\Program Files\Google\google_appengine\"` or on 64bit `"C:\Program Files (x86)\Google\google_appengine\"`:
 ```dos
-> install.bat "C:\Program Files\Google\google_appengine\"
+> install.bat "C:\Program Files (x86)\Google\google_appengine\"
+```
+If the output is similar to this, you have successfully installed Datastore MongoDB Stub into the SDK:
+```dos
+Copying datastore mongodb stub into SDK...
+        1 file(s) copied.
+        1 file(s) copied.
+Patching dev_appserver...
+patching file appengine/tools/api_server.py
+patching file appengine/tools/dev_appserver.py
+patching file appengine/tools/dev_appserver_main.py
+patching file appengine/tools/devappserver2/api_server.py
+patching file appengine/tools/devappserver2/devappserver2.py
+patching file appengine/ext/testbed/__init__.py
+"Done."
 ```
 
 
+### FAQ & Common Errors
+* If you notice message `Access denied` while patching the SDK, you are not running the `cmd` as Administrator.
+  Make sure you type `cmd` into the "Run" field in Start and press `Ctrl+Shift+Enter` to run as Administrator.
+* If you see this traceback in your GAE SDK Launcher's Log: 
+
+```python
+Traceback (most recent call last):
+  File "C:\Program Files (x86)\Google\google_appengine\dev_appserver.py", line 193, in <module>
+    _run_file(__file__, globals())
+  File "C:\Program Files (x86)\Google\google_appengine\dev_appserver.py", line 189, in _run_file
+    execfile(script_path, globals_)
+  File "C:\Program Files (x86)\Google\google_appengine\google\appengine\tools\devappserver2\devappserver2.py", line 31, in <module>
+    from google.appengine.datastore.datastore_mongodb_stub import MongoDatastore
+  File "C:\Program Files (x86)\Google\google_appengine\google\appengine\datastore\datastore_mongodb_stub.py", line 46, in <module>
+    from pymongo import ASCENDING, DESCENDING
+ImportError: No module named pymongo
+2013-04-29 16:11:23 (Process exited with code 1)
+```
+* ..you probably did not install `pymongo` library.
 
 Usage
 =====
